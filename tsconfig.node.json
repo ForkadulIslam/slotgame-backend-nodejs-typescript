@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowSyntheticDefaultImports": true,
+    "outDir": "./dist-server"
+  },
+  "include": ["app.ts", "src/data.ts", "src/games/slot-with-free-games/*.ts"]
+}
