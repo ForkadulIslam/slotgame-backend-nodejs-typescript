@@ -84,6 +84,7 @@ const runSimulation = (
     simulationConfig: SimulationConfig,
 ) => {
     const simulation = new Simulation(session, simulationConfig);
+    //console.log(session);
     session.play();
     simulation.run();
     return serializer.getRoundData(session as VideoSlotWithFreeGamesSession);
