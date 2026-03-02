@@ -6,11 +6,27 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import {
     customScenarios as scenarios,
-} from './src/games/slot-with-free-games/index.js';
+} from './src/games/slot-with-free-games-classic/index.js';
 import { getRoundData, getCustomScenarioData, getInitialData } from "./src/data.js";
-import {SwfgConfig} from "./src/games/slot-with-free-games/SwfgConfig.js";
-import {SwfgSession} from "./src/games/slot-with-free-games/SwfgSession.js";
-import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games/SwfgSessionWinCalculator.js";
+
+//  Clasic config
+// import {SwfgConfig} from "./src/games/slot-with-free-games-classic/SwfgConfig.js";
+// import {SwfgSession} from "./src/games/slot-with-free-games-classic/SwfgSession.js";
+// import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games-classic/SwfgSessionWinCalculator.js";
+
+
+// Mega win (High Risk, High Reward) config
+import {SwfgConfig} from "./src/games/slot-with-free-games-mega-win/SwfgConfig.js";
+import {SwfgSession} from "./src/games/slot-with-free-games-mega-win/SwfgSession.js";
+import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games-mega-win/SwfgSessionWinCalculator.js";
+
+
+// High-frequency-config
+// import {SwfgConfig} from "./src/games/slot-with-free-games-high-frequency/SwfgConfig.js";
+// import {SwfgSession} from "./src/games/slot-with-free-games-high-frequency/SwfgSession.js";
+// import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games-high-frequency/SwfgSessionWinCalculator.js";
+
+
 import {
     SymbolsCombinationsGenerator,
     VideoSlotWithFreeGamesSession,
@@ -292,8 +308,9 @@ app.get('/user-session-simulation', async (req, res) => {
     }
 
     try {
-        const { session, serializer } = getOrCreateSession(sessionId);
         
+        const { session, serializer } = getOrCreateSession(sessionId);
+        session.setBet(5);
         let totalNormalRounds = 0;
         let totalFreeRounds = 0;
         let totalNormalWin = 0;
@@ -369,6 +386,7 @@ app.get('/user-session-simulation', async (req, res) => {
                 avgWinPerTrigger: freeSpinTriggerCount > 0 ? parseFloat((totalFreeWin / freeSpinTriggerCount).toFixed(2)) : 0
             }
         });
+
     } catch (error) {
         console.error("Error during simulation:", error);
         res.status(500).json({ error: "An error occurred during the simulation." });
@@ -380,3 +398,4 @@ const port = process.env.PORT || 3002;
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+
