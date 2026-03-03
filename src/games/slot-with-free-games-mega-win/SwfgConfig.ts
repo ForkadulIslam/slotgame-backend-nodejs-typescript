@@ -17,6 +17,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     private freeGamesMode = false;
 
     constructor() {
+        console.log('Mega-win config');
         super();
         this.setCreditsAmount(10000);
         this.setReelsNumber(5);

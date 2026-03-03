@@ -5,26 +5,9 @@ import express from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import {
-    customScenarios as scenarios,
-} from './src/games/slot-with-free-games-classic/index.js';
+    gameRegistry
+} from './src/games/activeGame.js';
 import { getRoundData, getCustomScenarioData, getInitialData } from "./src/data.js";
-
-//  Clasic config
-// import {SwfgConfig} from "./src/games/slot-with-free-games-classic/SwfgConfig.js";
-// import {SwfgSession} from "./src/games/slot-with-free-games-classic/SwfgSession.js";
-// import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games-classic/SwfgSessionWinCalculator.js";
-
-
-// Mega win (High Risk, High Reward) config
-import {SwfgConfig} from "./src/games/slot-with-free-games-mega-win/SwfgConfig.js";
-import {SwfgSession} from "./src/games/slot-with-free-games-mega-win/SwfgSession.js";
-import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games-mega-win/SwfgSessionWinCalculator.js";
-
-
-// High-frequency-config
-// import {SwfgConfig} from "./src/games/slot-with-free-games-high-frequency/SwfgConfig.js";
-// import {SwfgSession} from "./src/games/slot-with-free-games-high-frequency/SwfgSession.js";
-// import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games-high-frequency/SwfgSessionWinCalculator.js";
 
 
 import {
@@ -181,23 +164,25 @@ async function deleteUserSessionMapping(userId: string): Promise<void> {
 interface GameSession {
     session: VideoSlotWithFreeGamesSession;
     serializer: VideoSlotWithFreeGamesSessionSerializer;
+    scenarios: any;
 }
 
 const activeSessions = new Map<string, GameSession>();
 
-const createNewSession = (): GameSession => {
-    const config = new SwfgConfig();
+const createNewSession = (gameId: string = "classic"): GameSession => {
+    const game = gameRegistry[gameId] || gameRegistry["classic"];
+    const config = new game.SwfgConfig();
     const combinationsGenerator = new SymbolsCombinationsGenerator(config);
-    const winCalculator = new SwfgSessionWinCalculator(config);
-    const session = new SwfgSession(config, combinationsGenerator, winCalculator);
+    const winCalculator = new game.SwfgSessionWinCalculator(config);
+    const session = new game.SwfgSession(config, combinationsGenerator, winCalculator);
     const serializer = new VideoSlotWithFreeGamesSessionSerializer();
-    return { session, serializer };
+    return { session, serializer, scenarios: game.customScenarios };
 }
 
-const getOrCreateSession = (sessionId: string): GameSession => {
+const getOrCreateSession = (sessionId: string, gameId?: string): GameSession => {
     if (!activeSessions.has(sessionId)) {
-        console.log(`Creating new session for id: ${sessionId}`);
-        activeSessions.set(sessionId, createNewSession());
+        console.log(`Creating new session for id: ${sessionId} (Variant: ${gameId || 'default/classic'})`);
+        activeSessions.set(sessionId, createNewSession(gameId));
     }
     return activeSessions.get(sessionId)!;
 }
@@ -228,7 +213,7 @@ app.get('/', (req, res)=>{
 })
 
 app.post('/start-session', (req, res) => {
-    const { userId } = req.body;
+    const { userId, gameId } = req.body;
     if (!userId) {
         return res.status(400).json({
             status: 'error',
@@ -237,8 +222,11 @@ app.post('/start-session', (req, res) => {
     }
 
     const sessionId = uuidv4();
-    getOrCreateSession(sessionId); // Create session on request
-    res.json({ sessionId });
+    getOrCreateSession(sessionId, gameId); // Create session with optional gameId
+    res.json({ 
+        status: 'success', 
+        data: { sessionId } 
+    });
 });
 
 app.get('/user-session-status', async (req, res) => {
@@ -283,13 +271,14 @@ app.get('/simulation', async (req, res) => {
         return res.status(400).json({ error: "Query parameter 'id' is required." });
     }
 
-    const isValidScenario = scenarios.some(s => s[0] === scenarioId);
-    if (!isValidScenario) {
-        return res.status(400).json({ error: `Invalid scenario id: ${scenarioId}` });
-    }
-
     try {
-        const { session, serializer } = getOrCreateSession(sessionId);
+        const { session, serializer, scenarios } = getOrCreateSession(sessionId);
+        
+        const isValidScenario = scenarios.some((s:any) => s[0] === scenarioId);
+        if (!isValidScenario) {
+            return res.status(400).json({ error: `Invalid scenario id: ${scenarioId}` });
+        }
+
         const data = await getCustomScenarioData(session, serializer, scenarios, scenarioId);
         res.json(data);
     } catch (error) {
@@ -310,7 +299,8 @@ app.get('/user-session-simulation', async (req, res) => {
     try {
         
         const { session, serializer } = getOrCreateSession(sessionId);
-        session.setBet(5);
+        session.setCreditsAmount(10000);
+        session.setBet(1);
         let totalNormalRounds = 0;
         let totalFreeRounds = 0;
         let totalNormalWin = 0;
