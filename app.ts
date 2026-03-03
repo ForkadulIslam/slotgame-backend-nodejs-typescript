@@ -5,18 +5,16 @@ import express from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import {
-    customScenarios as scenarios,
-} from './src/games/slot-with-free-games/index.js';
+    gameRegistry
+} from './src/games/activeGame.js';
 import { getRoundData, getCustomScenarioData, getInitialData } from "./src/data.js";
-import {SwfgConfig} from "./src/games/slot-with-free-games/SwfgConfig.js";
-import {SwfgSession} from "./src/games/slot-with-free-games/SwfgSession.js";
-import {SwfgSessionWinCalculator} from "./src/games/slot-with-free-games/SwfgSessionWinCalculator.js";
+
+
 import {
     SymbolsCombinationsGenerator,
     VideoSlotWithFreeGamesSession,
     VideoSlotWithFreeGamesSessionSerializer,
-    LinesDefinitionsFor5x4,
-    CustomLinesDefinitions
+    VideoSlotWithFreeGamesRoundNetworkData,
 } from "pokie";
 
 import AsyncLock from 'async-lock'; // Added import for async-lock
@@ -166,58 +164,25 @@ async function deleteUserSessionMapping(userId: string): Promise<void> {
 interface GameSession {
     session: VideoSlotWithFreeGamesSession;
     serializer: VideoSlotWithFreeGamesSessionSerializer;
+    scenarios: any;
 }
 
 const activeSessions = new Map<string, GameSession>();
 
-const createNewSession = (): GameSession => {
-    const config = new SwfgConfig();
-    config.setReelsNumber(5);
-    config.setReelsSymbolsNumber(4);
-    config.setAvailableBets([1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 35, 40, 50, 100, 150, 200, 300, 400, 500, 1000]);
-    config.setAvailableSymbols(["Ace", "King", "Queen", "Jack", "Ten", "Nine", "Wild", "Scatter1", "Scatter2"]);
-    config.setWildSymbols(["Wild"]);
-    config.setScatterSymbols(["Scatter1", "Scatter2"]);
-    const defaultLinesDefinitions = new LinesDefinitionsFor5x4();
-    const customLinesDefinitions = new CustomLinesDefinitions();
-    customLinesDefinitions.setLineDefinition("0", defaultLinesDefinitions.getLineDefinition("0"));
-    customLinesDefinitions.setLineDefinition("1", defaultLinesDefinitions.getLineDefinition("1"));
-    customLinesDefinitions.setLineDefinition("2", defaultLinesDefinitions.getLineDefinition("2"));
-    customLinesDefinitions.setLineDefinition("3", defaultLinesDefinitions.getLineDefinition("3"));
-    customLinesDefinitions.setLineDefinition("4", defaultLinesDefinitions.getLineDefinition("4"));
-    customLinesDefinitions.setLineDefinition("5", defaultLinesDefinitions.getLineDefinition("5"));
-    customLinesDefinitions.setLineDefinition("6", defaultLinesDefinitions.getLineDefinition("6"));
-    customLinesDefinitions.setLineDefinition("7", defaultLinesDefinitions.getLineDefinition("7"));
-    customLinesDefinitions.setLineDefinition("8", defaultLinesDefinitions.getLineDefinition("8"));
-    customLinesDefinitions.setLineDefinition("9", defaultLinesDefinitions.getLineDefinition("9"));
-    customLinesDefinitions.setLineDefinition("10", defaultLinesDefinitions.getLineDefinition("10"));
-    customLinesDefinitions.setLineDefinition("11", defaultLinesDefinitions.getLineDefinition("11"));
-    customLinesDefinitions.setLineDefinition("12", [0, 1, 0, 1, 0]);
-    customLinesDefinitions.setLineDefinition("13", [1, 2, 1, 2, 1]);
-    customLinesDefinitions.setLineDefinition("14", [2, 3, 2, 3, 2]);
-    customLinesDefinitions.setLineDefinition("15", [1, 0, 1, 0, 1]);
-    customLinesDefinitions.setLineDefinition("16", [2, 1, 2, 1, 2]);
-    customLinesDefinitions.setLineDefinition("17", [3, 2, 3, 2, 3]);
-    customLinesDefinitions.setLineDefinition("18", [0, 1, 2, 3, 2]);
-    customLinesDefinitions.setLineDefinition("19", [3, 2, 1, 0, 1]);
-    customLinesDefinitions.setLineDefinition("20", [0, 2, 0, 2, 0]);
-    customLinesDefinitions.setLineDefinition("21", [1, 3, 1, 3, 1]);
-    customLinesDefinitions.setLineDefinition("22", [1, 0, 0, 0, 1]);
-    customLinesDefinitions.setLineDefinition("23", [2, 3, 3, 3, 2]);
-    customLinesDefinitions.setLineDefinition("24", [0, 2, 1, 2, 0]);
-    config.setLinesDefinitions(customLinesDefinitions);
-
+const createNewSession = (gameId: string = "classic"): GameSession => {
+    const game = gameRegistry[gameId] || gameRegistry["classic"];
+    const config = new game.SwfgConfig();
     const combinationsGenerator = new SymbolsCombinationsGenerator(config);
-    const winCalculator = new SwfgSessionWinCalculator(config);
-    const session = new SwfgSession(config, combinationsGenerator, winCalculator);
+    const winCalculator = new game.SwfgSessionWinCalculator(config);
+    const session = new game.SwfgSession(config, combinationsGenerator, winCalculator);
     const serializer = new VideoSlotWithFreeGamesSessionSerializer();
-    return { session, serializer };
+    return { session, serializer, scenarios: game.customScenarios };
 }
 
-const getOrCreateSession = (sessionId: string): GameSession => {
+const getOrCreateSession = (sessionId: string, gameId?: string): GameSession => {
     if (!activeSessions.has(sessionId)) {
-        console.log(`Creating new session for id: ${sessionId}`);
-        activeSessions.set(sessionId, createNewSession());
+        console.log(`Creating new session for id: ${sessionId} (Variant: ${gameId || 'default/classic'})`);
+        activeSessions.set(sessionId, createNewSession(gameId));
     }
     return activeSessions.get(sessionId)!;
 }
@@ -248,7 +213,7 @@ app.get('/', (req, res)=>{
 })
 
 app.post('/start-session', (req, res) => {
-    const { userId } = req.body;
+    const { userId, gameId } = req.body;
     if (!userId) {
         return res.status(400).json({
             status: 'error',
@@ -257,8 +222,11 @@ app.post('/start-session', (req, res) => {
     }
 
     const sessionId = uuidv4();
-    getOrCreateSession(sessionId); // Create session on request
-    res.json({ sessionId });
+    getOrCreateSession(sessionId, gameId); // Create session with optional gameId
+    res.json({ 
+        status: 'success', 
+        data: { sessionId } 
+    });
 });
 
 app.get('/user-session-status', async (req, res) => {
@@ -303,13 +271,14 @@ app.get('/simulation', async (req, res) => {
         return res.status(400).json({ error: "Query parameter 'id' is required." });
     }
 
-    const isValidScenario = scenarios.some(s => s[0] === scenarioId);
-    if (!isValidScenario) {
-        return res.status(400).json({ error: `Invalid scenario id: ${scenarioId}` });
-    }
-
     try {
-        const { session, serializer } = getOrCreateSession(sessionId);
+        const { session, serializer, scenarios } = getOrCreateSession(sessionId);
+        
+        const isValidScenario = scenarios.some((s:any) => s[0] === scenarioId);
+        if (!isValidScenario) {
+            return res.status(400).json({ error: `Invalid scenario id: ${scenarioId}` });
+        }
+
         const data = await getCustomScenarioData(session, serializer, scenarios, scenarioId);
         res.json(data);
     } catch (error) {
@@ -318,8 +287,105 @@ app.get('/simulation', async (req, res) => {
     }
 });
 
+
+app.get('/user-session-simulation', async (req, res) => {
+    const sessionId = req.query.sessionId as string;
+    const iterations = parseInt(req.query.iterations as string) || 10000;
+
+    if (!sessionId) {
+        return res.status(400).json({ error: "Query parameter 'sessionId' is required." });
+    }
+
+    try {
+        
+        const { session, serializer } = getOrCreateSession(sessionId);
+        session.setCreditsAmount(10000);
+        session.setBet(1);
+        let totalNormalRounds = 0;
+        let totalFreeRounds = 0;
+        let totalNormalWin = 0;
+        let totalFreeWin = 0;
+        let normalWinCount = 0;
+        let freeSpinTriggerCount = 0;
+        let totalBet = 0;
+        let maxWin = 0;
+        const wins: number[] = [];
+
+        for(let i=0; i < iterations; i++){
+            let data = await getRoundData(session, serializer) as VideoSlotWithFreeGamesRoundNetworkData;
+            const isFreeGame = data.freeGamesNum !== undefined && data.freeGamesNum > 0;
+            
+            let roundWin = 0;
+            if (data.winningLines) {
+                Object.values(data.winningLines).forEach(line => {
+                    roundWin += line.winAmount;
+                });
+            }
+            if (data.winningScatters) {
+                Object.values(data.winningScatters).forEach(scatter => {
+                    roundWin += scatter.winAmount;
+                });
+            }
+
+            maxWin = Math.max(maxWin, roundWin);
+            wins.push(roundWin);
+
+            if (isFreeGame) {
+                totalFreeRounds++;
+                totalFreeWin += roundWin;
+            } else {
+                totalNormalRounds++;
+                totalNormalWin += roundWin;
+                totalBet += data.bet;
+                if (roundWin > 0) {
+                    normalWinCount++;
+                }
+                if (data.wonFreeGamesNumber !== undefined && data.wonFreeGamesNumber > 0) {
+                    freeSpinTriggerCount++;
+                }
+            }
+        }
+
+        const normalRtp = totalBet > 0 ? totalNormalWin / totalBet : 0;
+        const freeRtp = totalBet > 0 ? totalFreeWin / totalBet : 0;
+        const totalRtp = totalBet > 0 ? (totalNormalWin + totalFreeWin) / totalBet : 0;
+        const hitFrequency = totalNormalRounds > 0 ? normalWinCount / totalNormalRounds : 0;
+        const freeSpinTriggerFrequency = totalNormalRounds > 0 ? freeSpinTriggerCount / totalNormalRounds : 0;
+
+        // Volatility calculation (Standard Deviation)
+        const mean = (totalNormalWin + totalFreeWin) / iterations;
+        const squareDiffs = wins.map(win => Math.pow(win - mean, 2));
+        const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / iterations;
+        const volatility = Math.sqrt(avgSquareDiff);
+
+        res.json({
+            normalRoundsCount: totalNormalRounds,
+            freeRoundsCount: totalFreeRounds,
+            normalRtp: parseFloat(normalRtp.toFixed(4)),
+            freeRtp: parseFloat(freeRtp.toFixed(4)),
+            totalRtp: parseFloat(totalRtp.toFixed(4)),
+            hitFrequency: parseFloat(hitFrequency.toFixed(4)),
+            freeSpinTriggerFrequency: parseFloat(freeSpinTriggerFrequency.toFixed(4)),
+            volatility: parseFloat(volatility.toFixed(4)),
+            maxWin: parseFloat(maxWin.toFixed(2)),
+            bonusContribution: totalNormalWin + totalFreeWin > 0 ? parseFloat((totalFreeWin / (totalNormalWin + totalFreeWin)).toFixed(4)) : 0,
+            details: {
+                totalNormalWin: parseFloat(totalNormalWin.toFixed(2)),
+                totalFreeWin: parseFloat(totalFreeWin.toFixed(2)),
+                totalBet: parseFloat(totalBet.toFixed(2)),
+                avgWinPerTrigger: freeSpinTriggerCount > 0 ? parseFloat((totalFreeWin / freeSpinTriggerCount).toFixed(2)) : 0
+            }
+        });
+
+    } catch (error) {
+        console.error("Error during simulation:", error);
+        res.status(500).json({ error: "An error occurred during the simulation." });
+    }
+})
+
 const port = process.env.PORT || 3002;
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+

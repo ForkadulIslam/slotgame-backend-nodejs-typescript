@@ -104,6 +104,10 @@ linesAndScattersConfig.setPlayStrategy({
         !(Object.keys(session.getWinningLines()).length > 0 && Object.keys(session.getWinningScatters()).length > 0),
 });
 
+export { SwfgConfig } from "./SwfgConfig.js";
+export { SwfgSession } from "./SwfgSession.js";
+export { SwfgSessionWinCalculator } from "./SwfgSessionWinCalculator.js";
+
 export const customGameSession = session;
 export const customGameSessionSerializer = new VideoSlotWithFreeGamesSessionSerializer();
 export const customScenarios = [
