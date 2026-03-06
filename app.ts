@@ -18,7 +18,7 @@ import {
 } from "pokie";
 
 import AsyncLock from 'async-lock'; // Added import for async-lock
-import { updateBackendWithUserBalance } from './session-finalizer.js';
+import { acquireLock, releaseLock } from './src/utils/redis-lock.js';
 
 const app = express();
 const allowedOrigins = [
@@ -61,11 +61,20 @@ const SESSION_EXPIRY = 3600 * 24; // 24 Hours
 
     try {
         await redisClient.connect();
-        console.log('Successfully connected to Redis!');
+        // Enable keyspace notifications for expired events (Ex)
+        // 'E' for Keyevent events, 'x' for Expired events
+        await redisClient.configSet('notify-keyspace-events', 'Ex');
+        console.log('Successfully connected to Redis and enabled expiration triggers!');
     } catch (err) {
         console.error('Failed to connect to Redis:', err);
     }
 })();
+
+const INACTIVITY_THRESHOLD = 60; // 1 minute in seconds
+
+async function refreshInactivityTrigger(sessionId: string) {
+    await redisClient.set(`inactivity_trigger:${sessionId}`, '', { EX: INACTIVITY_THRESHOLD });
+}
 
 
 
@@ -112,9 +121,10 @@ async function balanceLock(userId:any) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const userData = await response.json();
-        if (userData.status === 'success' && userData.data && userData.data.balanceLoct) {
+        if (userData.status === 'success' && userData.data && userData.data.balanceLock) {
+            console.log(userData.data)
             return {
-                balanceLoct: userData.data.balanceLoct,
+                balanceLock: userData.data.balanceLock,
             };
         } else {
             throw new Error('Could not lock user balance.');
@@ -184,6 +194,7 @@ const getOrCreateSession = (sessionId: string, gameId?: string): GameSession => 
         console.log(`Creating new session for id: ${sessionId} (Variant: ${gameId || 'default/classic'})`);
         activeSessions.set(sessionId, createNewSession(gameId));
     }
+    //console.log(activeSessions.get(sessionId))
     return activeSessions.get(sessionId)!;
 }
 
@@ -212,7 +223,7 @@ app.get('/', (req, res)=>{
     res.json('Live server');
 })
 
-app.post('/start-session', (req, res) => {
+app.post('/start-session', async (req, res) => {
     const { userId, gameId } = req.body;
     if (!userId) {
         return res.status(400).json({
@@ -221,12 +232,113 @@ app.post('/start-session', (req, res) => {
         });
     }
 
-    const sessionId = uuidv4();
-    getOrCreateSession(sessionId, gameId); // Create session with optional gameId
-    res.json({ 
-        status: 'success', 
-        data: { sessionId } 
-    });
+    try {
+        await lock.acquire(userId, async () => {
+
+            try {
+                await balanceLock(userId);
+            } catch (error: any) {
+                res.status(500).json({
+                    status: 'error',
+                    message: 'Failed to lock user balance : ' + error.message
+                });
+                return;
+            }
+
+            const defaultBoosterConfig = {
+                active: true,
+                multiplier: 1,
+                no_of_spin_round: 10,
+                uses_left: 15,
+                spin_interval: 50
+            };
+
+            let initialUserBalance: number | undefined;
+            let currentBoosterConfig = defaultBoosterConfig;
+            let username: string | undefined;
+            let isSynced = false;
+            let lastActivityTime = Date.now();
+            let spin_count = 0;
+
+            // Check for existing session in Redis to recover state or detect variant change
+            const oldSessionId = await getUserSessionId(userId);
+            //console.log(oldSessionId);
+            if (oldSessionId) {
+                const existingSessionState = await getPlayerState(oldSessionId);
+                if (existingSessionState) {
+                    initialUserBalance = existingSessionState.credits;
+                    currentBoosterConfig = existingSessionState.booster || defaultBoosterConfig;
+                    username = existingSessionState.username;
+                    lastActivityTime = Date.now();
+                    spin_count = existingSessionState.spin_count || 0;
+                }
+            }
+
+            // Fetch balance from external API if no session exists or if balance recovery failed
+            if (initialUserBalance === undefined || isNaN(initialUserBalance)) {
+                try {
+                    const fetchedData = await fetchUserData(userId);
+                    initialUserBalance = fetchedData.initialUserBalance;
+                    username = fetchedData.username;
+                } catch (error: any) {
+                    res.status(500).json({
+                        status: 'error',
+                        message: 'Failed to fetch user data from the external API: ' + error.message
+                    });
+                    return; 
+                }
+            }
+
+            if (initialUserBalance! < 0) {
+                 res.status(400).json({
+                    status: 'error',
+                    message: 'User balance is below zero, cannot start a session.'
+                });
+                return;
+            }
+
+            // --- Generate a fresh Session ID for the new session ---
+            const sessionId = uuidv4();
+            
+            // --- Initialize the new session (this replaces any existing session in memory for this user) ---
+            const { session, serializer } = getOrCreateSession(sessionId, gameId);
+            session.setCreditsAmount(initialUserBalance!);
+
+            const initialState = {
+                userId: userId,
+                username: username,
+                credits: session.getCreditsAmount(),
+                spin_count: spin_count,
+                booster: currentBoosterConfig,
+                isSynced: isSynced,
+                lastActivityTime: lastActivityTime,
+                gameId: gameId || 'classic'
+            };
+
+            // --- Atomically save new session state and update user mapping in Redis ---
+            await Promise.all([
+                savePlayerState(sessionId, initialState),
+                setUserSessionId(userId, sessionId),
+                refreshInactivityTrigger(sessionId)
+            ]);
+            
+            // --- Crucial Cleanup: Purge the old session from memory and Redis to enforce "one session per user" ---
+            if (oldSessionId) {
+                await deletePlayerState(oldSessionId);
+                activeSessions.delete(oldSessionId); 
+            }
+
+            const initialData = serializer.getInitialData(session);
+            res.json({
+                status: 'success',
+                message: 'Session started successfully.',
+                data: { sessionId, ...initialData }
+            });
+
+        }); // End of lock
+    } catch (error: any) {
+        res.status(500).json({ status: 'error', message: `Failed to acquire session lock: ${error.message}` });
+    }
 });
 
 app.get('/user-session-status', async (req, res) => {
@@ -236,31 +348,123 @@ app.get('/user-session-status', async (req, res) => {
     }
 
     try {
-        const { session, serializer } = getOrCreateSession(sessionId);
-        const data = await getInitialData(session, serializer);
-        res.json(data);
+        // 1. Fetch the state from Redis (Source of Truth)
+        const state = await getPlayerState(sessionId);
+        if (!state) {
+            return res.status(404).json({ 
+                status: 'error', 
+                message: "Session not found or expired. Please start a new one." 
+            });
+        }
+
+        // 2. Security Check: Verify this is still the active session for the user
+        const activeSessionId = await getUserSessionId(state.userId);
+        if (activeSessionId !== sessionId) {
+            return res.status(403).json({ 
+                status: 'error', 
+                message: "This session is no longer active." 
+            });
+        }
+
+        // 3. Re-hydrate: Retrieve/Create the engine and restore variant & balance
+        const { session, serializer } = getOrCreateSession(sessionId, state.gameId);
+        session.setCreditsAmount(state.credits);
+
+        // 4. Get the initial game data (Reels, Symbols, etc.)
+        const initialData = await getInitialData(session, serializer);
+
+        // 5. Return complete state for frontend recovery
+        res.json({
+            status: 'success',
+            data: {
+                sessionId,
+                ...initialData,
+                credits: state.credits,
+                spin_count: state.spin_count,
+                username: state.username,
+                booster: state.booster,
+                gameId: state.gameId
+            }
+        });
     } catch (error) {
-        console.error("Error during initial data fetch:", error);
-        res.status(500).json({ error: "An error occurred during the initial data fetch." });
+        console.error("Error during session status recovery:", error);
+        res.status(500).json({ status: 'error', message: "Internal server error during recovery." });
     }
 });
 
-app.get('/spin', async (req, res) => {
-    const sessionId = req.query.sessionId as string;
-    if (!sessionId) {
-        return res.status(400).json({ error: "Query parameter 'sessionId' is required." });
+app.post('/spin', async (req, res) => {
+    
+    const { bet, sessionId } = req.body; 
+
+    // Numeric validation for bet
+    const numericBet = parseFloat(bet);
+    if (!sessionId || isNaN(numericBet) || numericBet <= 0) {
+        return res.status(400).json({ error: 'Missing or invalid sessionId/bet amount' });
+    }
+
+    // Acquire a distributed lock with a 30s safety TTL and unique token
+    const lockToken = await acquireLock(redisClient, sessionId, 30);
+    if (!lockToken) {
+        return res.status(429).json({ error: 'A spin is already in progress or session is being finalized.' });
     }
 
     try {
-        const { session, serializer } = getOrCreateSession(sessionId);
-        const data = await getRoundData(session, serializer);
-        res.json(data);
-    } catch (error) {
+        // Fetch state INSIDE the lock to prevent race conditions
+        const state = await getPlayerState(sessionId);
+        if (!state) {
+            return res.status(400).json({ error: 'Invalid or expired sessionId' });
+        }
+
+        const activeSessionId = await getUserSessionId(state.userId);
+        if (activeSessionId !== sessionId) {
+            return res.status(403).json({ error: 'Session is no longer active.' });
+        }
+
+        // Re-hydrate session with the correct variant stored in state
+        const { session: userSession, serializer: userSessionSerializer } = getOrCreateSession(sessionId, state.gameId);
+
+        // Re-hydrate balance from Redis into the game engine
+        userSession.setCreditsAmount(state.credits);
+
+        // Validate Balance
+        if (userSession.getCreditsAmount() < numericBet) {
+            return res.status(400).json({ error: 'Insufficient credits' });
+        }
+
+        // Increment spin count and execute
+        state.spin_count++;
+        userSession.setBet(numericBet);
+
+        const roundData = await getRoundData(userSession, userSessionSerializer) as VideoSlotWithFreeGamesRoundNetworkData;
+
+        // Update state with new balance and activity time
+        state.credits = userSession.getCreditsAmount();
+        state.lastActivityTime = Date.now();
+        state.isSynced = false;
+
+        // Persist the updated state back to Redis and refresh heartbeat
+        await Promise.all([
+            savePlayerState(sessionId, state),
+            refreshInactivityTrigger(sessionId)
+        ]);
+
+        res.json({
+            ...roundData,
+            spin_count: state.spin_count,
+            credits: state.credits // Return updated credits for UI sync
+        });
+
+    } catch (error: any) {
         console.error("Error during spin:", error);
-        res.status(500).json({ error: "An error occurred during the spin." });
+        res.status(500).json({ error: error.message || "An error occurred during the spin." });
+    } finally {
+        // Safe release: only unlocks if the token still matches
+        await releaseLock(redisClient, sessionId, lockToken);
     }
 });
 
+
+//This endpoint is to be used for testing specific scenerio by demo session;
 app.get('/simulation', async (req, res) => {
     const scenarioId = req.query.id as string;
     const sessionId = req.query.sessionId as string;
@@ -288,6 +492,7 @@ app.get('/simulation', async (req, res) => {
 });
 
 
+//This endpoint is to be used for testing and provided with demo user id and session
 app.get('/user-session-simulation', async (req, res) => {
     const sessionId = req.query.sessionId as string;
     const iterations = parseInt(req.query.iterations as string) || 10000;
