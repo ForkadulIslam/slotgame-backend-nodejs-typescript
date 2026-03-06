@@ -6,6 +6,7 @@
     "scripts": {
         "dev:client": "vite",
         "dev:server": "nodemon",
+        "worker": "node dist-server/src/session-finalizer.js",
         "build:server": "tsc -p tsconfig.node.json",
         "build": "tsc && vite build",
         "preview": "vite preview",
