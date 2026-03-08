@@ -51,7 +51,7 @@ const getOrCreateSession = (sessionId: string, gameId?: string): GameSession => 
 async function runBugReproduction() {
     console.log("=== ARCHITECTURAL BUG REPRODUCTION: PIXEL-PERFECT app.ts REPLICA ===");
 
-    const gameId = "classic";
+    const gameId = "mega-win";
     const sessionIdA = "player-a";
     const sessionIdB = "player-b";
     const scenarioId = "fg";
@@ -99,7 +99,7 @@ async function runBugReproduction() {
         
         // Confirm Player B is now in Free Games Mode
         // We verify by accessing the config through the session reference in memory
-        const isB_Free_Pre = (session as any).config.isFreeGamesMode();
+        const isB_Free_Pre = (session as any).swfgConfig.isFreeGamesMode();
         console.log(`VERIFICATION: Player B 'isFreeGamesMode' before A's interaction: ${isB_Free_Pre}`);
     }
 
@@ -131,8 +131,8 @@ async function runBugReproduction() {
     await getRoundData(containerA, serializerA);
     console.log(`After one more spin of player A, Credits: ${containerA.getCreditsAmount()} [Expected != previous amount], freeGameSum: ${containerA.getFreeGamesSum()}, [Expected 0]`);
 
-    const isA_Final = (containerA as any).config.isFreeGamesMode();
-    const isB_Final = (containerB as any).config.isFreeGamesMode();
+    const isA_Final = (containerA as any).swfgConfig.isFreeGamesMode();
+    const isB_Final = (containerB as any).swfgConfig.isFreeGamesMode();
 
     console.log(`Player A (Current Spin) Config Mode: ${isA_Final}`);
     console.log(`Player B (Target Session) Config Mode: ${isB_Final} (EXPECTED: true)`);

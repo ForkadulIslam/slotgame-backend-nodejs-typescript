@@ -41,7 +41,7 @@ async function runTest() {
     await releaseLock(redisClient, testKey, token3!);
 
     console.log('\n--- Test 5: Automatic TTL Expiry ---');
-    const token4 = await acquireLock(redisClient, testKey, 2); // 2 second TTL
+    await acquireLock(redisClient, testKey, 2); // 2 second TTL
     console.log('Lock acquired with 2s TTL. Waiting 3 seconds...');
     await new Promise(resolve => setTimeout(resolve, 3000));
     const checkLockAfterExpiry = await redisClient.get(`lock:${testKey}`);
