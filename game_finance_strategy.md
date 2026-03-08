@@ -171,8 +171,93 @@ Here is the industry-standard framework for your architecture:
      playing.
 
 
-  Why this is "Low Resource" Friendly:
-   1. CPU: Redis operations are non-blocking and extremely light.
-   2. RAM: Redis strings and hashes are highly memory-efficient.
-   3. Disk I/O: By batching the SQL writes, your database isn't constantly hitting the disk, which is the #1 bottleneck on cheap VPS
-      servers.
+
+
+
+
+**************************************************************
+Booster for balance recovery logic
+To ensure the company's profit margin remains safe while giving out boosters, you must treat boosters as a Marketing Expense that
+  is deducted from your Gross Margin.
+
+
+  The industry-standard algorithm for "Math-Correct" boosters is the "Reserve Fund" Algorithm.
+
+  ---
+
+
+  1. The Core Concept: The "Booster Pot"
+  You never give away "Free" multipliers. Instead, you "tax" every normal spin to fund the booster.
+
+
+   * Standard RTP: 90% (Paid back to player instantly).
+   * Booster Contribution: 2% (Put into a hidden "Booster Pot").
+   * Company Margin: 8% (House profit).
+   * Total: 100%.
+
+  2. The Profit-Safe Algorithm
+
+  To calculate if you can afford a booster win, use this formula:
+
+
+  Maximum_Booster_Win = (Player_Total_Loss * Target_Margin_Factor) + Reserve_Fund
+
+  Step-by-Step Calculation:
+
+
+   1. Calculate the "Spendable Profit":
+      If a player has a net_pnl of 100 (they lost 100), you cannot give them 100 back, or you make 0 profit.
+       * Target Margin: 10% (You want to keep at least 10 credits).
+       * Spendable Profit: 100 * (1 - 0.10) = 90.
+       * Result: You can safely give this player boosters worth up to 90 credits.
+
+
+   2. Calculate the "Dynamic Multiplier":
+      Instead of a fixed x10 multiplier, calculate it based on the net_pnl.
+       * Allowed_Win = net_pnl * 0.5 (Give back 50% of what they lost).
+       * Multiplier = Allowed_Win / Current_Engine_Win.
+       * Example: Player lost 100. Current spin wins 5.
+       * Allowed_Win = 100 * 0.5 = 50.
+       * Safe_Multiplier = 50 / 5 = 10.
+       * Action: Set multiplier: 10 for this spin.
+
+
+  3. The "Global Limit" Fail-Safe (The House Always Wins)
+  To protect your low-resource server from a "Runaway Booster" bug, always check your Global GGR before firing a booster.
+
+  Formula:
+
+
+   1 const globalStats = await redisClient.hGetAll('stats:global');
+   2 const globalGgr = parseFloat(globalStats.total_bet) - parseFloat(globalStats.total_win);
+   3
+   4 if (globalGgr < 1000) {
+   5     // Disable ALL boosters globally until the casino recovers its profit margin
+   6     boosterConfig.active = false;
+   7 }
+
+  ---
+
+  4. Implementation Logic for your Booster Config
+
+
+  You should update the booster config during the spin or start-session using this math:
+
+
+
+  ┌────────────────┬─────────────────┬─────────────────────────────────────────┐
+  │ Metric         │ Rule            │ Math Calculation                        │
+  ├────────────────┼─────────────────┼─────────────────────────────────────────┤
+  │ Max Multiplier │ net_pnl is high │ min(10, floor(net_pnl / 10))            │
+  │ Probability    │ artp is low     │ if artp < 50% then chance = 20% else 5% │
+  │ Uses Left      │ Recovery mode   │ min(10, floor(net_pnl / bet_amount))    │
+  └────────────────┴─────────────────┴─────────────────────────────────────────┘
+
+  ---
+
+
+  Summary Checklist for Mathematical Correctness:
+   1. Cap the Return: Never let a booster return more than 70% of a player's lifetime loss (net_pnl).
+   2. Global Buffer: Only fire boosters if global:artp is currently lower than your target (e.g., if Global RTP is 80%, you can
+      afford to be generous).
+   3. The "Big Win" Cap: Always set a max_payout per spin (e.g., 500x Bet) regardless of the multiplier.
