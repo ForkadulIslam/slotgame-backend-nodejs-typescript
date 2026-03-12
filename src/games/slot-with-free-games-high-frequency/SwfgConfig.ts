@@ -10,11 +10,11 @@ import {
 } from "pokie";
 
 export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
-    private readonly normalSequences: SymbolsSequence[];
-    private readonly freeGamesSequences: SymbolsSequence[];
-    private readonly normalPatterns: LeftToRightLinesPatterns;
-    private readonly freeGamesPatterns: ScatteredLinesPatterns;
-    private freeGamesMode = false;
+    protected readonly normalSequences: SymbolsSequence[];
+    protected readonly freeGamesSequences: SymbolsSequence[];
+    protected readonly normalPatterns: LeftToRightLinesPatterns;
+    protected readonly freeGamesPatterns: ScatteredLinesPatterns;
+    protected freeGamesMode = false;
 
     constructor() {
         super();

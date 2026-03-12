@@ -2,7 +2,7 @@ import {SymbolsCombinationsGenerating, VideoSlotWinCalculating, VideoSlotWithFre
 import {SwfgConfig} from "./SwfgConfig.js";
 
 export class SwfgSession extends VideoSlotWithFreeGamesSession {
-    private static config: SwfgConfig;
+    private swfgConfig: SwfgConfig;
 
     constructor(
         config: SwfgConfig,
@@ -10,15 +10,15 @@ export class SwfgSession extends VideoSlotWithFreeGamesSession {
         winCalculator: VideoSlotWinCalculating,
     ) {
         super(config, combinationsGenerator, winCalculator);
-        SwfgSession.config = config;
+        this.swfgConfig = config;
     }
 
     public play() {
         super.play();
         if (this.getFreeGamesSum() > 0 && this.getFreeGamesNum() !== this.getFreeGamesSum()) {
-            SwfgSession.config.setFreeGamesMode(true);
+            this.swfgConfig.setFreeGamesMode(true);
         } else {
-            SwfgSession.config.setFreeGamesMode(false);
+            this.swfgConfig.setFreeGamesMode(false);
         }
     }
 }

@@ -7,5 +7,5 @@
     "allowSyntheticDefaultImports": true,
     "outDir": "./dist-server"
   },
-  "include": ["app.ts", "src/data.ts", "src/games/**/*.ts", "src/session-finalizer.ts", "src/utils/**/*.ts", "src/test-lock.ts"]
+  "include": ["app.ts", "src/data.ts", "src/games/**/*.ts", "src/session-finalizer.ts", "src/spin-log-sync.ts", "src/utils/**/*.ts", "src/test-lock.ts"]
 }

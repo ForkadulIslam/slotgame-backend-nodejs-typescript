@@ -9,18 +9,18 @@ import {
 } from "pokie";
 
 export class SwfgSessionWinCalculator extends VideoSlotWinCalculator {
-    private static config: SwfgConfig;
+    private swfgConfig: SwfgConfig;
     private multipliedLines?: Record<string, WinningLineDescribing>;
     private multipliedScatters?: Record<string, WinningScatterDescribing>;
 
     constructor(config: SwfgConfig) {
         super(config);
-        SwfgSessionWinCalculator.config = config;
+        this.swfgConfig = config;
     }
 
     public calculateWin(bet: number, symbolsCombination: SymbolsCombinationDescribing) {
         super.calculateWin(bet, symbolsCombination);
-        if (SwfgSessionWinCalculator.config.isFreeGamesMode()) {
+        if (this.swfgConfig.isFreeGamesMode()) {
             const originalScatters = super.getWinningScatters();
             this.multipliedScatters = {};
             Object.values(originalScatters).forEach(
