@@ -17,7 +17,6 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     protected freeGamesMode = false;
 
     constructor() {
-        console.log('Classic config');
         super();
         this.setCreditsAmount(10000);
         this.setReelsNumber(5);

@@ -20,7 +20,6 @@ import {
 import AsyncLock from 'async-lock'; // Added import for async-lock
 import { acquireLock, releaseLock } from './src/utils/redis-lock.js';
 import { recordSpinStats } from './src/utils/stats.js';
-import session from 'express-session';
 
 const app = express();
 const allowedOrigins = [
@@ -50,6 +49,7 @@ const lock = new AsyncLock(); // Created an instance of AsyncLock
 let redisClient: ReturnType<typeof createClient>;
 const SESSION_EXPIRY = 3600 * 24; // 24 Hours
 (async () => {
+    console.log(process.env.REDIS_HOST);
     redisClient = createClient({
         username: process.env.REDIS_USERNAME,
         password: process.env.REDIS_PASSWORD,
@@ -124,7 +124,6 @@ async function balanceLock(userId:any) {
         }
         const userData = await response.json();
         if (userData.status === 'success' && userData.data && userData.data.balanceLock) {
-            console.log(userData.data)
             return {
                 balanceLock: userData.data.balanceLock,
             };
@@ -178,6 +177,7 @@ interface GameSession {
     serializer: VideoSlotWithFreeGamesSessionSerializer;
     scenarios: any;
     lastActivityTime: number; // Heartbeat for RAM cleanup
+    baseCredits: number; // The balance currently synced in Laravel
 }
 
 const activeSessions = new Map<string, GameSession>();
@@ -193,13 +193,13 @@ const createNewSession = (gameId: string = "classic"): GameSession => {
         session, 
         serializer, 
         scenarios: game.customScenarios,
-        lastActivityTime: Date.now() // Initial heartbeat
+        lastActivityTime: Date.now(), // Initial heartbeat
+        baseCredits: 0
     };
 }
 
 const getOrCreateSession = (sessionId: string, gameId?: string): GameSession => {
     if (!activeSessions.has(sessionId)) {
-        console.log(`Creating new session for id: ${sessionId} (Variant: ${gameId || 'default/classic'})`);
         activeSessions.set(sessionId, createNewSession(gameId));
     }
     const container = activeSessions.get(sessionId)!;
@@ -325,14 +325,18 @@ app.post('/start-session', async (req, res) => {
             // --- Generate a fresh Session ID for the new session ---
             const sessionId = uuidv4();
             
-            // --- Initialize the new session (this replaces any existing session in memory for this user) ---
-            const { session, serializer } = getOrCreateSession(sessionId, gameId);
+            // --- Initialize the new session ---
+            const container = getOrCreateSession(sessionId, gameId);
+            const { session, serializer } = container;
+            
             session.setCreditsAmount(initialUserBalance!);
+            container.baseCredits = initialUserBalance!; // Set the "Laravel" balance as base
 
             const initialState = {
                 userId: userId,
                 username: username,
                 credits: session.getCreditsAmount(),
+                baseCredits: initialUserBalance!, // Persist baseCredits in Redis
                 spin_count: spin_count,
                 booster: currentBoosterConfig,
                 isSynced: isSynced,
@@ -395,8 +399,11 @@ app.get('/user-session-status', async (req, res) => {
         }
 
         // 3. Re-hydrate: Retrieve/Create the engine and restore variant & balance
-        const { session, serializer } = getOrCreateSession(sessionId, state.gameId);
+        const container = getOrCreateSession(sessionId, state.gameId);
+        const { session, serializer } = container;
+        
         session.setCreditsAmount(state.credits);
+        container.baseCredits = state.baseCredits || state.credits; // Restore baseCredits
 
         // 4. Get the initial game data (Reels, Symbols, etc.)
         const initialData = await getInitialData(session, serializer);
@@ -449,12 +456,11 @@ app.post('/spin', async (req, res) => {
         }
 
         // Re-hydrate session with the correct variant stored in state
-        const { session: userSession, serializer: userSessionSerializer } = getOrCreateSession(sessionId, state.gameId);
+        const container = getOrCreateSession(sessionId, state.gameId);
+        const { session: userSession, serializer: userSessionSerializer } = container;
 
-        // Console log credits from in-memory, helpfull for checking live credits during a fast-forword simulation 
-        //console.log(userSession.getWonFreeGamesNumber())
-
-        
+        // Restore baseCredits to container for health monitoring
+        container.baseCredits = state.baseCredits || state.credits; 
 
         // Re-hydrate balance from Redis into the game engine
         userSession.setCreditsAmount(state.credits);
@@ -483,8 +489,12 @@ app.post('/spin', async (req, res) => {
             });
         }
 
+        // Detect if this was a Free Spin for accurate financial stats
+        const isFreeSpin = roundData.freeGamesNum !== undefined && roundData.freeGamesNum > 0;
+        const betForStats = isFreeSpin ? 0 : numericBet;
+
         // Record Stats
-        await recordSpinStats(redisClient, state.userId, numericBet, totalWin, state.gameId);
+        await recordSpinStats(redisClient, state.userId, betForStats, totalWin, state.gameId, false, 1, isFreeSpin);
 
         // Update state with new balance, safety net fields, and activity time
         state.credits = userSession.getCreditsAmount();
@@ -661,6 +671,42 @@ app.get('/user-session-simulation', async (req, res) => {
     }
 })
 
+app.get('/admin/health', async (req, res) => {
+    const apiKey = req.headers['x-admin-key'];
+    const expectedKey = process.env.ADMIN_API_KEY || 'default_admin_secret';
+
+    if (apiKey !== expectedKey) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid admin API key' });
+    }
+
+    // Calculate Total Liability and Net Floating PnL
+    let totalLiability = 0;
+    let netFloatingPnl = 0;
+
+    for (const container of activeSessions.values()) {
+        const currentCredits = container.session.getCreditsAmount();
+        totalLiability += currentCredits;
+        netFloatingPnl += (currentCredits - container.baseCredits);
+    }
+
+    const mem = process.memoryUsage();
+    res.json({
+        status: 'success',
+        timestamp: Date.now(),
+        active_sessions: activeSessions.size,
+        total_liability: parseFloat(totalLiability.toFixed(2)),
+        net_floating_pnl: parseFloat(netFloatingPnl.toFixed(2)),
+        memory: {
+            rss: (mem.rss / 1024 / 1024).toFixed(2) + ' MB',
+            heapTotal: (mem.heapTotal / 1024 / 1024).toFixed(2) + ' MB',
+            heapUsed: (mem.heapUsed / 1024 / 1024).toFixed(2) + ' MB',
+            external: (mem.external / 1024 / 1024).toFixed(2) + ' MB'
+        },
+        uptime: parseFloat(process.uptime().toFixed(2)),
+        node_version: process.version
+    });
+});
+
 app.get('/admin/player-stats', async (req, res) => {
     const apiKey = req.headers['x-admin-key'];
     const expectedKey = process.env.ADMIN_API_KEY || 'default_admin_secret';
@@ -687,6 +733,7 @@ app.get('/admin/player-stats', async (req, res) => {
             const spins = parseInt(raw.total_spins || '0', 10);
             const net_pnl = parseFloat(raw.net_pnl || '0'); 
             const artp = bet > 0 ? (win / bet) * 100 : 0;
+            const house_edge = bet > 0 ? (net_pnl / bet) * 100 : 0;
 
             return {
                 total_bet: parseFloat(bet.toFixed(2)),
@@ -694,6 +741,7 @@ app.get('/admin/player-stats', async (req, res) => {
                 total_spins: spins,
                 net_pnl: parseFloat(net_pnl.toFixed(2)),
                 artp: parseFloat(artp.toFixed(2)) + '%',
+                house_edge: parseFloat(house_edge.toFixed(2)) + '%',
                 status: net_pnl > 0 ? 'Profitable (Company)' : 'Unprofitable (Company)'
             };
         };
@@ -743,13 +791,18 @@ app.get('/admin/stats', async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0];
         
-        // Fetch raw counters from Redis (Both tracks)
+        // Fetch raw counters from Redis
         const [globalStats, dailyStats, simGlobalStats, simDailyStats] = await Promise.all([
             redisClient.hGetAll('stats:global'),
             redisClient.hGetAll(`stats:daily:${today}`),
             redisClient.hGetAll('sim_stats:global'),
             redisClient.hGetAll(`sim_stats:daily:${today}`)
         ]);
+
+        // Fetch Stats for each game variant
+        const gameIds = Object.keys(gameRegistry);
+        const gameStatsPromises = gameIds.map(id => redisClient.hGetAll(`stats:game:${id}`));
+        const gameStatsResults = await Promise.all(gameStatsPromises);
 
         const formatStats = (raw: any) => {
             const bet = parseFloat(raw.total_bet || '0');
@@ -767,12 +820,18 @@ app.get('/admin/stats', async (req, res) => {
             };
         };
 
+        const gamesBreakdown: any = {};
+        gameIds.forEach((id, index) => {
+            gamesBreakdown[id] = formatStats(gameStatsResults[index]);
+        });
+
         res.json({
             status: 'success',
             timestamp: Date.now(),
             live: {
                 global: formatStats(globalStats),
-                today: formatStats(dailyStats)
+                today: formatStats(dailyStats),
+                games: gamesBreakdown
             },
             simulation: {
                 global: formatStats(simGlobalStats),

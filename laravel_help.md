@@ -1,63 +1,52 @@
-# Laravel Integration: Batch Spin Log Sync
+# Laravel Integration: Batch Spin Log Sync (High Performance)
 
-To support the Node.js batch worker, you need to implement the following in your Laravel backend.
+To support 100+ spins per second on budget shared hosting, we use a **Queue + Job** strategy. This allows the API to return instantly while the database work happens in the background.
 
 ### 1. Database Migration
-Ensure you have a `spin_logs` table.
+Ensure you have a `spin_logs` table with proper indexes for fast admin stats.
 
 ```php
 Schema::create('spin_logs', function (Blueprint $table) {
     $table->id();
-    $table->foreignId('user_id')->constrained();
-    $table->string('game_id');
+    $table->unsignedBigInteger('user_id')->index();
+    $table->string('game_id')->index();
     $table->decimal('bet', 16, 2);
     $table->decimal('win', 16, 2);
     $table->boolean('is_free_game')->default(false);
-    $table->timestamp('created_at'); // Use the timestamp from Node.js
+    $table->timestamp('created_at')->index(); 
 });
 ```
 
-### 2. API Route
-Add this to `routes/api.php`:
+### 2. Job Implementation
+Create `App\Jobs\ProcessSpinLogsBatch.php`. This job handles the bulk database insertion.
 
 ```php
-use App\Http\Controllers\Api\SpinLogController;
+namespace App\Jobs;
 
-Route::post('/batch_spin_logs', [SpinLogController::class, 'batchStore']);
-```
-
-### 3. Controller Implementation
-Create `App\Http\Controllers\Api\SpinLogController.php`.
-
-```php
-namespace App\Http\Controllers\Api;
-
-use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
-class SpinLogController extends Controller
+class ProcessSpinLogsBatch implements ShouldQueue
 {
-    /**
-     * Store a batch of spin logs from the Node.js worker.
-     * 
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function batchStore(Request $request)
-    {
-        $request->validate([
-            'logs' => 'required|array',
-            'logs.*.userId' => 'required',
-            'logs.*.bet' => 'required|numeric',
-            'logs.*.win' => 'required|numeric',
-        ]);
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-        $logs = $request->input('logs');
+    protected $logs;
+
+    public function __construct(array $logs)
+    {
+        $this->logs = $logs;
+    }
+
+    public function handle()
+    {
         $dataToInsert = [];
 
-        foreach ($logs as $log) {
+        foreach ($this->logs as $log) {
             $dataToInsert[] = [
                 'user_id'     => $log['userId'],
                 'game_id'     => $log['gameId'] ?? 'classic',
@@ -68,24 +57,51 @@ class SpinLogController extends Controller
             ];
         }
 
-        try {
-            // Use chunking if the batch size is extremely large
-            DB::table('spin_logs')->insert($dataToInsert);
-
-            return response()->json([
-                'status'  => 'success',
-                'message' => count($dataToInsert) . ' logs synced successfully.'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Failed to sync logs: ' . $e.getMessage()
-            ], 500);
-        }
+        // Use a transaction for ACID compliance
+        DB::transaction(function () use ($dataToInsert) {
+            // Batch insert in chunks of 500 to stay within MySQL packet limits
+            collect($dataToInsert)->chunk(500)->each(function ($chunk) {
+                DB::table('spin_logs')->insert($chunk->toArray());
+            });
+        });
     }
 }
 ```
 
-### 4. Why this is efficient:
-*   **Batch Insert:** Instead of 100 separate SQL queries, Laravel sends a single `INSERT INTO ... VALUES (...), (...), ...` query. This is significantly faster and uses less CPU/Memory on your low-resource server.
-*   **Carbon Timestamp:** We convert the JavaScript millisecond timestamp (`timestamp`) into a proper Laravel/MySQL timestamp to maintain accurate history.
+### 3. Controller Implementation
+Create `App\Http\Controllers\Api\SpinLogController.php`. This is a "Fire and Forget" endpoint.
+
+```php
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use App\Jobs\ProcessSpinLogsBatch;
+
+class SpinLogController extends Controller
+{
+    /**
+     * Accepts a batch of logs and offloads them to the queue.
+     * Response time: <50ms
+     */
+    public function batchStore(Request $request)
+    {
+        if (!$request->has('logs') || !is_array($request->logs)) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid data'], 400);
+        }
+
+        // Dispatch to background queue
+        ProcessSpinLogsBatch::dispatch($request->logs);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Batch accepted.'
+        ]);
+    }
+}
+```
+
+### 4. Why this is safe for 100 SPS:
+*   **Zero Locking:** The API controller doesn't touch the database. It only pushes to the queue (Redis/Database queue), preventing PHP process hang-ups.
+*   **Data Integrity:** The Node.js worker waits for a `200 OK` before clearing the logs from Redis. If Laravel is down, the logs stay in Redis safely.
+*   **No Spikes:** Because the Node.js worker sends batches "one by one" with a delay, the shared hosting PHP pool is never overwhelmed.

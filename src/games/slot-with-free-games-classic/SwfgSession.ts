@@ -20,6 +20,5 @@ export class SwfgSession extends VideoSlotWithFreeGamesSession {
         } else {
             this.swfgConfig.setFreeGamesMode(false);
         }
-        console.log(`[CORE-LOG] Session Instance Sum: ${this.getFreeGamesSum()}, Instance Config Mode: ${this.swfgConfig.isFreeGamesMode()}`);
     }
 }
