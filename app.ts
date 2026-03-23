@@ -528,7 +528,7 @@ app.get('/user-session-status', async (req, res) => {
 });
 
 
-//This endpoint is to be used for testing specific scenerio by demo session;
+//This endpoint is to be used for testing specific scenario by demo session;
 app.get('/simulation', async (req, res) => {
     const scenarioId = req.query.id as string;
     const sessionId = req.query.sessionId as string;
@@ -664,7 +664,25 @@ app.get('/user-session-simulation', async (req, res) => {
         const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / iterations;
         const volatility = Math.sqrt(avgSquareDiff);
 
+        // --- JILI STYLE CALCULATIONS ---
+        const bonusTrigger = freeSpinTriggerFrequency > 0 ? `~${Math.round(1 / freeSpinTriggerFrequency)} spins` : "N/A";
+        const maxWinMultiplier = `${(maxWin / 1).toFixed(0)}x`; // bet is forced to 1 in simulation
+        
+        let volatilityLabel = "Low";
+        if (volatility > 50) volatilityLabel = "High";
+        else if (volatility > 25) volatilityLabel = "Med-High";
+        else if (volatility > 12) volatilityLabel = "Medium";
+        else if (volatility > 5) volatilityLabel = "Low-Med";
+
         res.json({
+            // Jili-Style Primary Metrics
+            rtp: (totalRtp * 100).toFixed(1) + "%",
+            volatilityLabel: volatilityLabel,
+            hitFrequencyPercent: (hitFrequency * 100).toFixed(0) + "%",
+            bonusTrigger: bonusTrigger,
+            maxWinMultiplier: maxWinMultiplier,
+
+            // Raw Data (Backward Compatibility)
             normalRoundsCount: totalNormalRounds,
             freeRoundsCount: totalFreeRounds,
             normalRtp: parseFloat(normalRtp.toFixed(4)),
