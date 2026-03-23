@@ -17,6 +17,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     protected freeGamesMode = false;
 
     constructor() {
+        console.log('High frequency')
         super();
         this.setCreditsAmount(10000);
         this.setReelsNumber(5);
