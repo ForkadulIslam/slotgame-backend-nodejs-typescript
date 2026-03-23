@@ -373,60 +373,6 @@ app.post('/start-session', async (req, res) => {
     }
 });
 
-app.get('/user-session-status', async (req, res) => {
-    const sessionId = req.query.sessionId as string;
-    if (!sessionId) {
-        return res.status(400).json({ error: "Query parameter 'sessionId' is required." });
-    }
-
-    try {
-        // 1. Fetch the state from Redis (Source of Truth)
-        const state = await getPlayerState(sessionId);
-        if (!state) {
-            return res.status(404).json({ 
-                status: 'error', 
-                message: "Session not found or expired. Please start a new one." 
-            });
-        }
-
-        // 2. Security Check: Verify this is still the active session for the user
-        const activeSessionId = await getUserSessionId(state.userId);
-        if (activeSessionId !== sessionId) {
-            return res.status(403).json({ 
-                status: 'error', 
-                message: "This session is no longer active." 
-            });
-        }
-
-        // 3. Re-hydrate: Retrieve/Create the engine and restore variant & balance
-        const container = getOrCreateSession(sessionId, state.gameId);
-        const { session, serializer } = container;
-        
-        session.setCreditsAmount(state.credits);
-        container.baseCredits = state.baseCredits || state.credits; // Restore baseCredits
-
-        // 4. Get the initial game data (Reels, Symbols, etc.)
-        const initialData = await getInitialData(session, serializer);
-
-        // 5. Return complete state for frontend recovery
-        res.json({
-            status: 'success',
-            data: {
-                sessionId,
-                ...initialData,
-                credits: state.credits,
-                spin_count: state.spin_count,
-                username: state.username,
-                booster: state.booster,
-                gameId: state.gameId
-            }
-        });
-    } catch (error) {
-        console.error("Error during session status recovery:", error);
-        res.status(500).json({ status: 'error', message: "Internal server error during recovery." });
-    }
-});
-
 app.post('/spin', async (req, res) => {
     
     const { bet, sessionId } = req.body; 
@@ -492,7 +438,9 @@ app.post('/spin', async (req, res) => {
         // Detect if this was a Free Spin for accurate financial stats
         const isFreeSpin = roundData.freeGamesNum !== undefined && roundData.freeGamesNum > 0;
         const betForStats = isFreeSpin ? 0 : numericBet;
-
+        if(isFreeSpin){
+            console.log(`====${roundData.freeGamesNum}===`)
+        }
         // Record Stats
         await recordSpinStats(redisClient, state.userId, betForStats, totalWin, state.gameId, false, 1, isFreeSpin);
 
@@ -525,8 +473,62 @@ app.post('/spin', async (req, res) => {
     }
 });
 
+app.get('/user-session-status', async (req, res) => {
+    const sessionId = req.query.sessionId as string;
+    if (!sessionId) {
+        return res.status(400).json({ error: "Query parameter 'sessionId' is required." });
+    }
 
-//This endpoint is to be used for testing specific scenerio by demo session;
+    try {
+        // 1. Fetch the state from Redis (Source of Truth)
+        const state = await getPlayerState(sessionId);
+        if (!state) {
+            return res.status(404).json({ 
+                status: 'error', 
+                message: "Session not found or expired. Please start a new one." 
+            });
+        }
+
+        // 2. Security Check: Verify this is still the active session for the user
+        const activeSessionId = await getUserSessionId(state.userId);
+        if (activeSessionId !== sessionId) {
+            return res.status(403).json({ 
+                status: 'error', 
+                message: "This session is no longer active." 
+            });
+        }
+
+        // 3. Re-hydrate: Retrieve/Create the engine and restore variant & balance
+        const container = getOrCreateSession(sessionId, state.gameId);
+        const { session, serializer } = container;
+        
+        session.setCreditsAmount(state.credits);
+        container.baseCredits = state.baseCredits || state.credits; // Restore baseCredits
+
+        // 4. Get the initial game data (Reels, Symbols, etc.)
+        const initialData = await getInitialData(session, serializer);
+
+        // 5. Return complete state for frontend recovery
+        res.json({
+            status: 'success',
+            data: {
+                sessionId,
+                ...initialData,
+                credits: state.credits,
+                spin_count: state.spin_count,
+                username: state.username,
+                booster: state.booster,
+                gameId: state.gameId
+            }
+        });
+    } catch (error) {
+        console.error("Error during session status recovery:", error);
+        res.status(500).json({ status: 'error', message: "Internal server error during recovery." });
+    }
+});
+
+
+//This endpoint is to be used for testing specific scenario by demo session;
 app.get('/simulation', async (req, res) => {
     const scenarioId = req.query.id as string;
     const sessionId = req.query.sessionId as string;
@@ -559,8 +561,24 @@ app.get('/simulation', async (req, res) => {
             return res.status(400).json({ error: `Invalid scenario id: ${scenarioId}` });
         }
 
-        const data = await getCustomScenarioData(session, serializer, scenarios, scenarioId);
-        res.json(data);
+        state.spin_count++;
+        const data = await getCustomScenarioData(session, serializer, scenarios, scenarioId) as VideoSlotWithFreeGamesRoundNetworkData;
+        state.credits = session.getCreditsAmount();
+        state.freeGamesNum = session.getFreeGamesNum();
+        state.freeGamesSum = session.getFreeGamesSum();
+        state.freeGamesBank = session.getFreeGamesBank();
+        state.lastActivityTime = Date.now();
+        state.isSynced = false;
+
+        await Promise.all([
+            savePlayerState(sessionId, state),
+            refreshInactivityTrigger(sessionId)
+        ]);
+        res.json({
+            ...data,
+            spin_count: state.spin_count,
+            credits: state.credits // Return updated credits for UI sync
+        });
     } catch (error) {
         console.error(`Error during simulation for scenario ${scenarioId}:`, error);
         res.status(500).json({ error: `An error occurred during the simulation.` });
@@ -646,7 +664,25 @@ app.get('/user-session-simulation', async (req, res) => {
         const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / iterations;
         const volatility = Math.sqrt(avgSquareDiff);
 
+        // --- JILI STYLE CALCULATIONS ---
+        const bonusTrigger = freeSpinTriggerFrequency > 0 ? `~${Math.round(1 / freeSpinTriggerFrequency)} spins` : "N/A";
+        const maxWinMultiplier = `${(maxWin / 1).toFixed(0)}x`; // bet is forced to 1 in simulation
+        
+        let volatilityLabel = "Low";
+        if (volatility > 50) volatilityLabel = "High";
+        else if (volatility > 25) volatilityLabel = "Med-High";
+        else if (volatility > 12) volatilityLabel = "Medium";
+        else if (volatility > 5) volatilityLabel = "Low-Med";
+
         res.json({
+            // Jili-Style Primary Metrics
+            rtp: (totalRtp * 100).toFixed(1) + "%",
+            volatilityLabel: volatilityLabel,
+            hitFrequencyPercent: (hitFrequency * 100).toFixed(0) + "%",
+            bonusTrigger: bonusTrigger,
+            maxWinMultiplier: maxWinMultiplier,
+
+            // Raw Data (Backward Compatibility)
             normalRoundsCount: totalNormalRounds,
             freeRoundsCount: totalFreeRounds,
             normalRtp: parseFloat(normalRtp.toFixed(4)),

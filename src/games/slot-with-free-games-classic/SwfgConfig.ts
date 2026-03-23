@@ -17,6 +17,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     protected freeGamesMode = false;
 
     constructor() {
+        console.log('Classic')
         super();
         this.setCreditsAmount(10000);
         this.setReelsNumber(5);
@@ -147,4 +148,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             return this.normalPatterns;
         }
     }
+
+
+
 }

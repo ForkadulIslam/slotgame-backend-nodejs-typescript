@@ -1,52 +1,24 @@
+Endpoint: 'user-session-simulation'
 {
-    "status": "success",
-    "timestamp": 1773077789681,
-    "live": {
-        "global": {
-            "total_bet": 15,
-            "total_win": 11.9,
-            "total_spins": 15,
-            "ggr": 3.1,
-            "artp": "79.33%"
-        },
-        "today": {
-            "total_bet": 15,
-            "total_win": 11.9,
-            "total_spins": 15,
-            "ggr": 3.1,
-            "artp": "79.33%"
-        },
-        "games": {
-            "classic": {
-                "total_bet": 0,
-                "total_win": 0,
-                "total_spins": 0,
-                "ggr": 0,
-                "artp": "0%"
-            },
-            "high-frequency": {
-                "total_bet": 0,
-                "total_win": 0,
-                "total_spins": 0,
-                "ggr": 0,
-                "artp": "0%"
-            },
-            "mega-win": {
-                "total_bet": 15,
-                "total_win": 11.9,
-                "total_spins": 15,
-                "ggr": 3.1,
-                "artp": "79.33%"
-            }
-        }
-    },
-    "simulation": {
-        "global": {
-            "total_bet": 19325,
-            "total_win": 18175.6,
-            "total_spins": 20000,
-            "ggr": 1149.4,
-            "artp": "94.05%"
-        }
+    "rtp": "90.8%",
+    "volatilityLabel": "Low",
+    "hitFrequencyPercent": "47%",
+    "bonusTrigger": "~374 spins",
+    "maxWinMultiplier": "30x",
+    "normalRoundsCount": 9735,
+    "freeRoundsCount": 265,
+    "normalRtp": 0.7141,
+    "freeRtp": 0.1939,
+    "totalRtp": 0.908,
+    "hitFrequency": 0.4717,
+    "freeSpinTriggerFrequency": 0.0027,
+    "volatility": 2.1443,
+    "maxWin": 30.1,
+    "bonusContribution": 0.2135,
+    "details": {
+        "totalNormalWin": 6951.85,
+        "totalFreeWin": 1887.5,
+        "totalBet": 9735,
+        "avgWinPerTrigger": 72.6
     }
 }
