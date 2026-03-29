@@ -529,7 +529,7 @@ app.get('/user-session-status', async (req, res) => {
 
 
 //This endpoint is to be used for testing specific scenario by demo session;
-app.get('/simulation', async (req, res) => {
+app.get('/fast-forward-simulation', async (req, res) => {
     const scenarioId = req.query.id as string;
     const sessionId = req.query.sessionId as string;
     if (!sessionId) {
