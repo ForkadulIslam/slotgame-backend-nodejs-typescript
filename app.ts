@@ -590,6 +590,7 @@ app.get('/fast-forward-simulation', async (req, res) => {
 app.get('/user-session-simulation', async (req, res) => {
     const sessionId = req.query.sessionId as string;
     const iterations = parseInt(req.query.iterations as string) || 10000;
+    //console.log(iterations)
 
     if (!sessionId) {
         return res.status(400).json({ error: "Query parameter 'sessionId' is required." });
@@ -601,7 +602,7 @@ app.get('/user-session-simulation', async (req, res) => {
         const userId = state?.userId || 'sim-user';
         const gameId = state?.gameId || 'classic';
 
-        session.setCreditsAmount(10000);
+        session.setCreditsAmount(100000);
         session.setBet(1);
         let totalNormalRounds = 0;
         let totalFreeRounds = 0;

@@ -1,4 +1,5 @@
 import {
+    CustomLinesDefinitions,
     LeftToRightLinesPatterns,
     LinesDefinitionsFor5x4,
     LinesPatternsDescribing,
@@ -17,9 +18,8 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     protected freeGamesMode = false;
 
     constructor() {
-        console.log('Mega-win');
+        console.log('Megawin config')
         super();
-        this.setCreditsAmount(10000);
         this.setReelsNumber(5);
         this.setReelsSymbolsNumber(4);
 
@@ -27,28 +27,24 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         this.setWildSymbols(["W"]);
         this.setScatterSymbols(["S"]);
         const sequences = [];
-        
-        // MATHEMATICAL CORRECTION: Rotated Dominance (L=220)
-        // Each reel has a different majority (95) to ensure ~20% Hit Frequency.
-        // Cluster density allows for 'Stacked' wins across 50+ lines.
-        const reelDistributions = [
-            { Nine: 95, Ten: 15, Jack: 15, Queen: 15, King: 15, Ace: 15, W: 10, S: 4 }, // R1: Nine Dom
-            { Nine: 15, Ten: 95, Jack: 15, Queen: 15, King: 15, Ace: 15, W: 10, S: 4 }, // R2: Ten Dom
-            { Nine: 15, Ten: 15, Jack: 95, Queen: 15, King: 15, Ace: 15, W: 10, S: 4 }, // R3: Jack Dom
-            { Nine: 15, Ten: 15, Jack: 15, Queen: 95, King: 15, Ace: 15, W: 10, S: 4 }, // R4: Queen Dom
-            { Nine: 15, Ten: 15, Jack: 15, Queen: 15, King: 95, Ace: 15, W: 10, S: 4 }  // R5: King Dom
-        ];
-        
         for (let i = 0; i < this.getReelsNumber(); i++) {
-            const sequence = new SymbolsSequence();
-            sequence.fromNumbersOfSymbols(reelDistributions[i]);
-            sequence.shuffle();
             
-            // Limit scatters per window for controlled bonus trigger (~1 in 220 spins)
+            const sequence = new SymbolsSequence();
+            sequence.fromNumbersOfSymbols({
+                Nine: 300,
+                Ten: 200,
+                Jack: 150,   
+                Queen: 75,   
+                King: 80,
+                Ace: 85,
+                W: 3,
+                S: 20,   
+            });
+            sequence.shuffle();
             for (let j = 0; j < sequence.getSize(); j++) {
                 const symbols = sequence.getSymbols(j, this.getReelsSymbolsNumber());
                 const scatters = symbols.filter((symbol) => symbol === "S");
-                if (scatters.length > 1) { 
+                if (scatters.length > 1) {
                     sequence.shuffle();
                     j = 0;
                 }
@@ -57,75 +53,96 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         }
         this.setSymbolsSequences(sequences);
         
+
         const pt = new Paytable(
             this.getAvailableBets(),
             this.getAvailableSymbols(),
             this.getWildSymbols(),
             this.getReelsNumber(),
         );
-        
-        // MEGA WIN VALUES: Buffed for 5-of-a-kind to allow Multiplier spikes
         this.getAvailableSymbols()
             .filter((symbol) => !this.isSymbolWild(symbol))
             .forEach((symbol) => {
+
+                // First, ensure all possible hits are 0
+                pt.setPayoutForSymbol(symbol, 2, 0);
+                pt.setPayoutForSymbol(symbol, 3, 0);
+                pt.setPayoutForSymbol(symbol, 4, 0);
+                pt.setPayoutForSymbol(symbol, 5, 0);
+
                 switch(symbol){
+
                     case "Nine":
-                        pt.setPayoutForSymbol(symbol, 3, 0.1);
+                        //pt.setPayoutForSymbol(symbol, 3, 0.1);
                         pt.setPayoutForSymbol(symbol, 4, 0.5);
                         pt.setPayoutForSymbol(symbol, 5, 2.0);
                         break;
 
                     case "Ten":
-                        pt.setPayoutForSymbol(symbol, 3, 0.1);
-                        pt.setPayoutForSymbol(symbol, 4, 0.5);
-                        pt.setPayoutForSymbol(symbol, 5, 2.0);
+                        pt.setPayoutForSymbol(symbol, 3, 0.2);
+                        pt.setPayoutForSymbol(symbol, 4, 1.0);
+                        pt.setPayoutForSymbol(symbol, 5, 5.0);
                         break;
 
                     case "Jack":
                         pt.setPayoutForSymbol(symbol, 3, 0.2);
-                        pt.setPayoutForSymbol(symbol, 4, 1.0);
-                        pt.setPayoutForSymbol(symbol, 5, 10.0);
+                        pt.setPayoutForSymbol(symbol, 4, 1.5);
+                        pt.setPayoutForSymbol(symbol, 5, 15.0);
                         break;
 
                     case "Queen":
                         pt.setPayoutForSymbol(symbol, 3, 0.5);
-                        pt.setPayoutForSymbol(symbol, 4, 2.0);
-                        pt.setPayoutForSymbol(symbol, 5, 20.0);
+                        pt.setPayoutForSymbol(symbol, 4, 3.0); 
+                        pt.setPayoutForSymbol(symbol, 5, 50.0);
                         break;
 
                     case "King":
                         pt.setPayoutForSymbol(symbol, 3, 1.0);
-                        pt.setPayoutForSymbol(symbol, 4, 5.0);
-                        pt.setPayoutForSymbol(symbol, 5, 50.0);
-                        break;
-                    
-                    case "Ace":
-                        pt.setPayoutForSymbol(symbol, 3, 2.0);
                         pt.setPayoutForSymbol(symbol, 4, 10.0);
-                        pt.setPayoutForSymbol(symbol, 5, 100.0); // Hits 50 lines = 5,000x
+                        pt.setPayoutForSymbol(symbol, 5, 200.0);
+                        break;
+
+                    case "Ace":
+                        pt.setPayoutForSymbol(symbol, 3, 2.0); 
+                        pt.setPayoutForSymbol(symbol, 4, 50.0); 
+                        pt.setPayoutForSymbol(symbol, 5, 2000.0);
                         break;
                     
                     case "S":
                         pt.setPayoutForSymbol(symbol, 3, 5.0);
-                        pt.setPayoutForSymbol(symbol, 4, 25.0);
-                        pt.setPayoutForSymbol(symbol, 5, 250.0);
+                        pt.setPayoutForSymbol(symbol, 4, 50.0);
+                        pt.setPayoutForSymbol(symbol, 5, 500.0);
                         break;
                 }
             });
         this.setPaytable(pt);
 
         this.normalPatterns = new LeftToRightLinesPatterns(this.getReelsNumber(), 3);
+
         this.freeGamesPatterns = new ScatteredLinesPatterns(this.getReelsNumber(), 3);
-        this.setLinesDefinitions(new LinesDefinitionsFor5x4());
-        
+
+        //this.setLinesDefinitions(new LinesDefinitionsFor5x4());
+        const allLines = new LinesDefinitionsFor5x4();
+        const tenLines = new CustomLinesDefinitions();
+        for (let i = 0; i < 10; i++) {
+            tenLines.setLineDefinition(i.toString(), allLines.getLineDefinition(i.toString()));
+        }
+        this.setLinesDefinitions(tenLines);
+
+
         this.normalSequences = super
             .getSymbolsSequences()
             .map((sequence) => new SymbolsSequence().fromArray(sequence.toArray()));
         this.freeGamesSequences = super
             .getSymbolsSequences()
-            .map((sequence) =>
-                new SymbolsSequence().fromArray(sequence.toArray()).removeAllSymbols(this.getScatterSymbols()[0]),
-            );       
+            .map((sequence) =>{
+                const newSeq = new SymbolsSequence().fromArray(sequence.toArray());
+                newSeq.removeAllSymbols(this.getScatterSymbols()[0]);
+                newSeq.addSymbol("Ace", 40); 
+                newSeq.shuffle();
+
+                return newSeq;
+            });       
     }
 
     public setFreeGamesMode(value: boolean): void {
@@ -151,4 +168,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             return this.normalPatterns;
         }
     }
+
+
+
 }

@@ -17,9 +17,8 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     protected freeGamesMode = false;
 
     constructor() {
-        console.log('Classic')
+        console.log('Classic config')
         super();
-        this.setCreditsAmount(10000);
         this.setReelsNumber(5);
         this.setReelsSymbolsNumber(4);
 
@@ -63,6 +62,13 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         this.getAvailableSymbols()
             .filter((symbol) => !this.isSymbolWild(symbol))
             .forEach((symbol) => {
+
+                // First, ensure all possible hits are 0
+                pt.setPayoutForSymbol(symbol, 2, 0);
+                pt.setPayoutForSymbol(symbol, 3, 0);
+                pt.setPayoutForSymbol(symbol, 4, 0);
+                pt.setPayoutForSymbol(symbol, 5, 0);
+
                 switch(symbol){
 
                     case "Nine":
