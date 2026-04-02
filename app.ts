@@ -376,7 +376,7 @@ app.post('/start-session', async (req, res) => {
 app.post('/spin', async (req, res) => {
     
     const { bet, sessionId } = req.body; 
-
+    console.log(sessionId)
     // Numeric validation for bet
     const numericBet = parseFloat(bet);
     if (!sessionId || isNaN(numericBet) || numericBet <= 0) {
@@ -590,7 +590,7 @@ app.get('/fast-forward-simulation', async (req, res) => {
 app.get('/user-session-simulation', async (req, res) => {
     const sessionId = req.query.sessionId as string;
     const iterations = parseInt(req.query.iterations as string) || 10000;
-    //console.log(iterations)
+    console.log(sessionId)
 
     if (!sessionId) {
         return res.status(400).json({ error: "Query parameter 'sessionId' is required." });

@@ -28,7 +28,7 @@ export class SwfgSessionWinCalculator extends VideoSlotWinCalculator {
                     (this.multipliedScatters![scatter.getSymbolId()] = new WinningScatter(
                         scatter.getSymbolId(),
                         scatter.getSymbolsPositions(),
-                        scatter.getWinAmount() * 2,
+                        scatter.getWinAmount() * 2, // CLASSIC: x2 Multiplier
                     )),
             );
             const originalLines = super.getWinningLines();
@@ -36,7 +36,7 @@ export class SwfgSessionWinCalculator extends VideoSlotWinCalculator {
             Object.values(originalLines).forEach(
                 (line) =>
                     (this.multipliedLines![line.getLineId()] = new WinningLine(
-                        line.getWinAmount() * 2,
+                        line.getWinAmount() * 2, // CLASSIC: x2 Multiplier
                         line.getDefinition(),
                         line.getPattern(),
                         line.getLineId(),
