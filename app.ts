@@ -529,7 +529,7 @@ app.get('/user-session-status', async (req, res) => {
 
 
 //This endpoint is to be used for testing specific scenario by demo session;
-app.get('/simulation', async (req, res) => {
+app.get('/fast-forward-simulation', async (req, res) => {
     const scenarioId = req.query.id as string;
     const sessionId = req.query.sessionId as string;
     if (!sessionId) {
@@ -590,6 +590,7 @@ app.get('/simulation', async (req, res) => {
 app.get('/user-session-simulation', async (req, res) => {
     const sessionId = req.query.sessionId as string;
     const iterations = parseInt(req.query.iterations as string) || 10000;
+    //console.log(iterations)
 
     if (!sessionId) {
         return res.status(400).json({ error: "Query parameter 'sessionId' is required." });
@@ -601,7 +602,7 @@ app.get('/user-session-simulation', async (req, res) => {
         const userId = state?.userId || 'sim-user';
         const gameId = state?.gameId || 'classic';
 
-        session.setCreditsAmount(10000);
+        session.setCreditsAmount(100000);
         session.setBet(1);
         let totalNormalRounds = 0;
         let totalFreeRounds = 0;
@@ -669,10 +670,19 @@ app.get('/user-session-simulation', async (req, res) => {
         const maxWinMultiplier = `${(maxWin / 1).toFixed(0)}x`; // bet is forced to 1 in simulation
         
         let volatilityLabel = "Low";
-        if (volatility > 50) volatilityLabel = "High";
-        else if (volatility > 25) volatilityLabel = "Med-High";
-        else if (volatility > 12) volatilityLabel = "Medium";
-        else if (volatility > 5) volatilityLabel = "Low-Med";
+        if (volatility > 40) {
+            volatilityLabel = "Extreme";     // Like Charge Buffalo (12,000x)
+        } else if (volatility > 25) {
+            volatilityLabel = "High";        // Like Roma X (7,500x)
+        } else if (volatility > 15) {
+            volatilityLabel = "Med-High";    // YOUR CURRENT MEGA WIN (2,000x)
+        } else if (volatility > 10) {
+            volatilityLabel = "Medium";      // Like Fortune Gems (500x)
+        } else if (volatility > 6) {
+            volatilityLabel = "Low-Med";     // Like Crazy777
+        } else {
+            volatilityLabel = "Low";         // Simple 3-reel bars/cherries
+        }
 
         res.json({
             // Jili-Style Primary Metrics

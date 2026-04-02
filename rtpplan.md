@@ -27,3 +27,4 @@ Bet sizing: Never exceed 1-2% of your total gambling bankroll on a single spin. 
 Win goals and loss limits: Set both before you start. Common approach: walk away at 50% loss of session bankroll (you brought RM150, you leave at RM75) or 100% profit (RM150 becomes RM300, you withdraw and walk). These are arbitrary but create circuit breakers against tilt.
 
 Feature chasing is a trap: The human brain convinces you that a bonus is “due” after 250 dead spins on a game with 165-spin average trigger frequency. Probability doesn’t work that way. Each spin is an independent event. The game doesn’t owe you anything, and “one more spin” compounds losses faster than any other behavior pattern.
+

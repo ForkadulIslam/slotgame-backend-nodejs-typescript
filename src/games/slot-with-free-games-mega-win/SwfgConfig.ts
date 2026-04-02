@@ -1,4 +1,5 @@
 import {
+    CustomLinesDefinitions,
     LeftToRightLinesPatterns,
     LinesDefinitionsFor5x4,
     LinesPatternsDescribing,
@@ -17,9 +18,8 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
     protected freeGamesMode = false;
 
     constructor() {
-        console.log('Mega-win');
+        console.log('Megawin config')
         super();
-        this.setCreditsAmount(10000);
         this.setReelsNumber(5);
         this.setReelsSymbolsNumber(4);
 
@@ -27,27 +27,24 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         this.setWildSymbols(["W"]);
         this.setScatterSymbols(["S"]);
         const sequences = [];
-        
-        // GOLDILOCKS ZONE: Not too hot, not too cold
-        const reelDistributions = [
-            { Nine: 22, Ten: 20, Jack: 16, Queen: 14, King: 10, Ace: 8, W: 5, S: 1 },  // Reel 1: 1 scatter
-            { Nine: 20, Ten: 18, Jack: 15, Queen: 13, King: 11, Ace: 9, W: 5, S: 2 },  // Reel 2: 2 scatters
-            { Nine: 18, Ten: 16, Jack: 14, Queen: 12, King: 12, Ace: 10, W: 5, S: 2 }, // Reel 3: 2 scatters
-            { Nine: 16, Ten: 14, Jack: 13, Queen: 11, King: 13, Ace: 11, W: 5, S: 2 }, // Reel 4: 2 scatters
-            { Nine: 14, Ten: 12, Jack: 12, Queen: 10, King: 14, Ace: 12, W: 5, S: 1 }  // Reel 5: 1 scatter
-        ];
-        // Total scatters: 8 (compared to 11 in hot config, 5 in cold config)
-        
         for (let i = 0; i < this.getReelsNumber(); i++) {
-            const sequence = new SymbolsSequence();
-            sequence.fromNumbersOfSymbols(reelDistributions[i]);
-            sequence.shuffle();
             
-            // CRITICAL: Change validation to >1 for better control
+            const sequence = new SymbolsSequence();
+            sequence.fromNumbersOfSymbols({
+                Nine: 300,
+                Ten: 200,
+                Jack: 150,   
+                Queen: 75,   
+                King: 80,
+                Ace: 85,
+                W: 3,
+                S: 20,   
+            });
+            sequence.shuffle();
             for (let j = 0; j < sequence.getSize(); j++) {
                 const symbols = sequence.getSymbols(j, this.getReelsSymbolsNumber());
                 const scatters = symbols.filter((symbol) => symbol === "S");
-                if (scatters.length > 1) { // Changed back to >1 for stability
+                if (scatters.length > 1) {
                     sequence.shuffle();
                     j = 0;
                 }
@@ -56,75 +53,96 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         }
         this.setSymbolsSequences(sequences);
         
+
         const pt = new Paytable(
             this.getAvailableBets(),
             this.getAvailableSymbols(),
             this.getWildSymbols(),
             this.getReelsNumber(),
         );
-        
-        // REDUCED PAYOUTS: Lower than hot config, higher than cold
         this.getAvailableSymbols()
             .filter((symbol) => !this.isSymbolWild(symbol))
             .forEach((symbol) => {
+
+                // First, ensure all possible hits are 0
+                pt.setPayoutForSymbol(symbol, 2, 0);
+                pt.setPayoutForSymbol(symbol, 3, 0);
+                pt.setPayoutForSymbol(symbol, 4, 0);
+                pt.setPayoutForSymbol(symbol, 5, 0);
+
                 switch(symbol){
+
                     case "Nine":
-                        pt.setPayoutForSymbol(symbol, 3, 0.35);
-                        pt.setPayoutForSymbol(symbol, 4, 0.7);
-                        pt.setPayoutForSymbol(symbol, 5, 1.4);
+                        //pt.setPayoutForSymbol(symbol, 3, 0.1);
+                        pt.setPayoutForSymbol(symbol, 4, 0.5);
+                        pt.setPayoutForSymbol(symbol, 5, 2.0);
                         break;
 
                     case "Ten":
-                        pt.setPayoutForSymbol(symbol, 3, 0.35);
-                        pt.setPayoutForSymbol(symbol, 4, 0.7);
-                        pt.setPayoutForSymbol(symbol, 5, 1.4);
+                        pt.setPayoutForSymbol(symbol, 3, 0.2);
+                        pt.setPayoutForSymbol(symbol, 4, 1.0);
+                        pt.setPayoutForSymbol(symbol, 5, 5.0);
                         break;
 
                     case "Jack":
-                        pt.setPayoutForSymbol(symbol, 3, 0.7);
-                        pt.setPayoutForSymbol(symbol, 4, 1.4);
-                        pt.setPayoutForSymbol(symbol, 5, 2.8);
+                        pt.setPayoutForSymbol(symbol, 3, 0.2);
+                        pt.setPayoutForSymbol(symbol, 4, 1.5);
+                        pt.setPayoutForSymbol(symbol, 5, 15.0);
                         break;
 
                     case "Queen":
-                        pt.setPayoutForSymbol(symbol, 3, 0.9);
-                        pt.setPayoutForSymbol(symbol, 4, 2.0);
-                        pt.setPayoutForSymbol(symbol, 5, 4.0);
+                        pt.setPayoutForSymbol(symbol, 3, 0.5);
+                        pt.setPayoutForSymbol(symbol, 4, 3.0); 
+                        pt.setPayoutForSymbol(symbol, 5, 50.0);
                         break;
 
                     case "King":
-                        pt.setPayoutForSymbol(symbol, 3, 1.4);
-                        pt.setPayoutForSymbol(symbol, 4, 3.5);
-                        pt.setPayoutForSymbol(symbol, 5, 14.0);
+                        pt.setPayoutForSymbol(symbol, 3, 1.0);
+                        pt.setPayoutForSymbol(symbol, 4, 10.0);
+                        pt.setPayoutForSymbol(symbol, 5, 200.0);
                         break;
-                    
+
                     case "Ace":
-                        pt.setPayoutForSymbol(symbol, 3, 2.1);
-                        pt.setPayoutForSymbol(symbol, 4, 5.6);
-                        pt.setPayoutForSymbol(symbol, 5, 24.0);
+                        pt.setPayoutForSymbol(symbol, 3, 2.0); 
+                        pt.setPayoutForSymbol(symbol, 4, 50.0); 
+                        pt.setPayoutForSymbol(symbol, 5, 2000.0);
                         break;
                     
                     case "S":
-                        pt.setPayoutForSymbol(symbol, 3, 2.1);
-                        pt.setPayoutForSymbol(symbol, 4, 10.5);
-                        pt.setPayoutForSymbol(symbol, 5, 100.0);
+                        pt.setPayoutForSymbol(symbol, 3, 5.0);
+                        pt.setPayoutForSymbol(symbol, 4, 50.0);
+                        pt.setPayoutForSymbol(symbol, 5, 500.0);
                         break;
                 }
             });
         this.setPaytable(pt);
 
         this.normalPatterns = new LeftToRightLinesPatterns(this.getReelsNumber(), 3);
+
         this.freeGamesPatterns = new ScatteredLinesPatterns(this.getReelsNumber(), 3);
-        this.setLinesDefinitions(new LinesDefinitionsFor5x4());
-        
+
+        //this.setLinesDefinitions(new LinesDefinitionsFor5x4());
+        const allLines = new LinesDefinitionsFor5x4();
+        const tenLines = new CustomLinesDefinitions();
+        for (let i = 0; i < 10; i++) {
+            tenLines.setLineDefinition(i.toString(), allLines.getLineDefinition(i.toString()));
+        }
+        this.setLinesDefinitions(tenLines);
+
+
         this.normalSequences = super
             .getSymbolsSequences()
             .map((sequence) => new SymbolsSequence().fromArray(sequence.toArray()));
         this.freeGamesSequences = super
             .getSymbolsSequences()
-            .map((sequence) =>
-                new SymbolsSequence().fromArray(sequence.toArray()).removeAllSymbols(this.getScatterSymbols()[0]),
-            );       
+            .map((sequence) =>{
+                const newSeq = new SymbolsSequence().fromArray(sequence.toArray());
+                newSeq.removeAllSymbols(this.getScatterSymbols()[0]);
+                newSeq.addSymbol("Ace", 40); 
+                newSeq.shuffle();
+
+                return newSeq;
+            });       
     }
 
     public setFreeGamesMode(value: boolean): void {
@@ -150,4 +168,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             return this.normalPatterns;
         }
     }
+
+
+
 }
