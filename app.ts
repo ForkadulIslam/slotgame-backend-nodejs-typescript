@@ -670,10 +670,19 @@ app.get('/user-session-simulation', async (req, res) => {
         const maxWinMultiplier = `${(maxWin / 1).toFixed(0)}x`; // bet is forced to 1 in simulation
         
         let volatilityLabel = "Low";
-        if (volatility > 50) volatilityLabel = "High";
-        else if (volatility > 25) volatilityLabel = "Med-High";
-        else if (volatility > 12) volatilityLabel = "Medium";
-        else if (volatility > 5) volatilityLabel = "Low-Med";
+        if (volatility > 40) {
+            volatilityLabel = "Extreme";     // Like Charge Buffalo (12,000x)
+        } else if (volatility > 25) {
+            volatilityLabel = "High";        // Like Roma X (7,500x)
+        } else if (volatility > 15) {
+            volatilityLabel = "Med-High";    // YOUR CURRENT MEGA WIN (2,000x)
+        } else if (volatility > 10) {
+            volatilityLabel = "Medium";      // Like Fortune Gems (500x)
+        } else if (volatility > 6) {
+            volatilityLabel = "Low-Med";     // Like Crazy777
+        } else {
+            volatilityLabel = "Low";         // Simple 3-reel bars/cherries
+        }
 
         res.json({
             // Jili-Style Primary Metrics
