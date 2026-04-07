@@ -628,20 +628,54 @@ app.get('/user-session-simulation', async (req, res) => {
         // Store free wins for additional metrics
         const freeWins: number[] = [];
 
+        // Symbols & Line tracking (grouped by session type)
+        const statsBySession = {
+            base: {
+                symbolStats: {} as Record<string, { win: number, count: number }>,
+                lineStats: {} as Record<string, { win: number, count: number }>
+            },
+            free: {
+                symbolStats: {} as Record<string, { win: number, count: number }>,
+                lineStats: {} as Record<string, { win: number, count: number }>
+            }
+        };
+
         // Main simulation loop - based on PAID spins only
         while (paidSpinsProcessed < iterations) {
             let data = await getRoundData(session, serializer) as VideoSlotWithFreeGamesRoundNetworkData;
             const isFreeGame = data.freeGamesNum !== undefined && data.freeGamesNum > 0;
+            const sessionType = isFreeGame ? 'free' : 'base';
             
             let roundWin = 0;
             if (data.winningLines) {
                 Object.values(data.winningLines).forEach(line => {
                     roundWin += line.winAmount;
+                    
+                    // Symbol Stats
+                    if (!statsBySession[sessionType].symbolStats[line.symbolId]) {
+                        statsBySession[sessionType].symbolStats[line.symbolId] = { win: 0, count: 0 };
+                    }
+                    statsBySession[sessionType].symbolStats[line.symbolId].win += line.winAmount;
+                    statsBySession[sessionType].symbolStats[line.symbolId].count++;
+
+                    // Line Stats
+                    if (!statsBySession[sessionType].lineStats[line.lineId]) {
+                        statsBySession[sessionType].lineStats[line.lineId] = { win: 0, count: 0 };
+                    }
+                    statsBySession[sessionType].lineStats[line.lineId].win += line.winAmount;
+                    statsBySession[sessionType].lineStats[line.lineId].count++;
                 });
             }
             if (data.winningScatters) {
                 Object.values(data.winningScatters).forEach(scatter => {
                     roundWin += scatter.winAmount;
+
+                    // Symbol Stats
+                    if (!statsBySession[sessionType].symbolStats[scatter.symbolId]) {
+                        statsBySession[sessionType].symbolStats[scatter.symbolId] = { win: 0, count: 0 };
+                    }
+                    statsBySession[sessionType].symbolStats[scatter.symbolId].win += scatter.winAmount;
+                    statsBySession[sessionType].symbolStats[scatter.symbolId].count++;
                 });
             }
 
@@ -743,6 +777,37 @@ app.get('/user-session-simulation', async (req, res) => {
             volatilityLabel = "Low";
         }
 
+        // --- BREAKDOWN CALCULATIONS ---
+        const calculateBreakdown = (stats: Record<string, { win: number, count: number }>, idKey: string) => {
+            return Object.entries(stats).map(([id, s]) => ({
+                [idKey]: id,
+                totalWin: parseFloat(s.win.toFixed(2)),
+                hitCount: s.count,
+                contribution: totalBet > 0 ? parseFloat(((s.win / totalBet) * 100).toFixed(2)) : 0
+            })).sort((a: any, b: any) => b.totalWin - a.totalWin);
+        };
+
+        // Aggregate totals for backward compatibility
+        const totalSymbolStats: Record<string, { win: number, count: number }> = {};
+        const totalLineStats: Record<string, { win: number, count: number }> = {};
+
+        ['base', 'free'].forEach((mode) => {
+            const m = mode as 'base' | 'free';
+            Object.entries(statsBySession[m].symbolStats).forEach(([id, s]) => {
+                if (!totalSymbolStats[id]) totalSymbolStats[id] = { win: 0, count: 0 };
+                totalSymbolStats[id].win += s.win;
+                totalSymbolStats[id].count += s.count;
+            });
+            Object.entries(statsBySession[m].lineStats).forEach(([id, s]) => {
+                if (!totalLineStats[id]) totalLineStats[id] = { win: 0, count: 0 };
+                totalLineStats[id].win += s.win;
+                totalLineStats[id].count += s.count;
+            });
+        });
+
+        const symbolBreakdown = calculateBreakdown(totalSymbolStats, 'symbolId');
+        const lineBreakdown = calculateBreakdown(totalLineStats, 'lineId');
+
         // --- RESPONSE ---
         res.json({
             // Jili-Style Primary Metrics
@@ -751,6 +816,24 @@ app.get('/user-session-simulation', async (req, res) => {
             hitFrequencyPercent: (hitFrequency * 100).toFixed(0) + "%",
             bonusTrigger: bonusTrigger,
             maxWinMultiplier: maxWinMultiplier,
+
+            // New Grouped Breakdowns
+            breakdowns: {
+                symbols: {
+                    total: symbolBreakdown,
+                    base: calculateBreakdown(statsBySession.base.symbolStats, 'symbolId'),
+                    free: calculateBreakdown(statsBySession.free.symbolStats, 'symbolId')
+                },
+                lines: {
+                    total: lineBreakdown,
+                    base: calculateBreakdown(statsBySession.base.lineStats, 'lineId'),
+                    free: calculateBreakdown(statsBySession.free.lineStats, 'lineId')
+                }
+            },
+
+            // Backward Compatibility Fields
+            symbolBreakdown,
+            lineBreakdown,
 
             // Raw Data (Backward Compatibility)
             normalRoundsCount: totalNormalRounds,

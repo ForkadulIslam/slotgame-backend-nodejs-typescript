@@ -23,7 +23,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         this.setReelsNumber(5);
         this.setReelsSymbolsNumber(4);
 
-        this.setAvailableSymbols(["Ace", "King", "Queen", "Jack", "Ten", "Nine", "W", "S"]);
+        this.setAvailableSymbols(["Ace", "King", "Queen", "Jack", "Ten", "Nine", "W", "S", "F"]);
         this.setWildSymbols(["W"]);
         this.setScatterSymbols(["S"]);
         const sequences = [];
@@ -31,14 +31,15 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             
             const sequence = new SymbolsSequence();
             sequence.fromNumbersOfSymbols({
-                Nine: 300,
-                Ten: 200,
-                Jack: 150,   
-                Queen: 75,   
-                King: 80,
-                Ace: 85,
+                Nine: 45,
+                Ten: 38,
+                Jack: 32,
+                Queen: 25,
+                King: 22,
+                Ace: 15,
                 W: 3,
-                S: 20,   
+                S: 5,
+                F: 16,
             });
             sequence.shuffle();
             for (let j = 0; j < sequence.getSize(); j++) {
@@ -72,47 +73,53 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
 
                 switch(symbol){
 
+
+                    case "F":  // Filler symbol - NO PAYOUTS
+                    // All payouts remain 0
+                    break;
+
                     case "Nine":
-                        //pt.setPayoutForSymbol(symbol, 3, 0.1);
-                        pt.setPayoutForSymbol(symbol, 4, 0.5);
-                        pt.setPayoutForSymbol(symbol, 5, 2.0);
+                        pt.setPayoutForSymbol(symbol, 3, 0.08);
+                        pt.setPayoutForSymbol(symbol, 4, 0.35);
+                        pt.setPayoutForSymbol(symbol, 5, 1.2);
                         break;
 
                     case "Ten":
-                        pt.setPayoutForSymbol(symbol, 3, 0.2);
-                        pt.setPayoutForSymbol(symbol, 4, 1.0);
-                        pt.setPayoutForSymbol(symbol, 5, 5.0);
+                        pt.setPayoutForSymbol(symbol, 3, 0.11);
+                        pt.setPayoutForSymbol(symbol, 4, 0.45);
+                        pt.setPayoutForSymbol(symbol, 5, 2.1);
                         break;
 
                     case "Jack":
                         pt.setPayoutForSymbol(symbol, 3, 0.2);
-                        pt.setPayoutForSymbol(symbol, 4, 1.5);
-                        pt.setPayoutForSymbol(symbol, 5, 15.0);
+                        pt.setPayoutForSymbol(symbol, 4, 0.9);
+                        pt.setPayoutForSymbol(symbol, 5, 7.5);
                         break;
 
                     case "Queen":
-                        pt.setPayoutForSymbol(symbol, 3, 0.5);
-                        pt.setPayoutForSymbol(symbol, 4, 3.0); 
-                        pt.setPayoutForSymbol(symbol, 5, 50.0);
+                        pt.setPayoutForSymbol(symbol, 3, 0.4);
+                        pt.setPayoutForSymbol(symbol, 4, 2.0);
+                        pt.setPayoutForSymbol(symbol, 5, 22.0);
                         break;
 
                     case "King":
-                        pt.setPayoutForSymbol(symbol, 3, 1.0);
-                        pt.setPayoutForSymbol(symbol, 4, 10.0);
-                        pt.setPayoutForSymbol(symbol, 5, 200.0);
+                        pt.setPayoutForSymbol(symbol, 3, 0.7);
+                        pt.setPayoutForSymbol(symbol, 4, 7.0);
+                        pt.setPayoutForSymbol(symbol, 5, 160.0);
                         break;
 
                     case "Ace":
-                        pt.setPayoutForSymbol(symbol, 3, 2.0); 
-                        pt.setPayoutForSymbol(symbol, 4, 50.0); 
-                        pt.setPayoutForSymbol(symbol, 5, 2000.0);
+                        pt.setPayoutForSymbol(symbol, 3, 3.5);    // Up from 2.8
+                        pt.setPayoutForSymbol(symbol, 4, 75.0);   // Up from 60.0
+                        pt.setPayoutForSymbol(symbol, 5, 2000.0); // Keep
                         break;
-                    
+
                     case "S":
-                        pt.setPayoutForSymbol(symbol, 3, 5.0);
-                        pt.setPayoutForSymbol(symbol, 4, 50.0);
-                        pt.setPayoutForSymbol(symbol, 5, 500.0);
+                        pt.setPayoutForSymbol(symbol, 3, 2.5);
+                        pt.setPayoutForSymbol(symbol, 4, 22.0);
+                        pt.setPayoutForSymbol(symbol, 5, 250.0);
                         break;
+
                 }
             });
         this.setPaytable(pt);
@@ -138,9 +145,6 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             .map((sequence) =>{
                 const newSeq = new SymbolsSequence().fromArray(sequence.toArray());
                 newSeq.removeAllSymbols(this.getScatterSymbols()[0]);
-                newSeq.addSymbol("Ace", 40); 
-                newSeq.shuffle();
-
                 return newSeq;
             });       
     }
