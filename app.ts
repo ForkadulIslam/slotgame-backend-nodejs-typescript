@@ -602,88 +602,213 @@ app.get('/user-session-simulation', async (req, res) => {
         const userId = state?.userId || 'sim-user';
         const gameId = state?.gameId || 'classic';
 
-        session.setCreditsAmount(100000);
-        session.setBet(1);
+        const simulationBet = 1;
+        session.setCreditsAmount(iterations * simulationBet);
+        session.setBet(simulationBet);
+        
+        // Cycle-based tracking variables
         let totalNormalRounds = 0;
         let totalFreeRounds = 0;
         let totalNormalWin = 0;
         let totalFreeWin = 0;
         let normalWinCount = 0;
+        let freeWinCount = 0;
         let freeSpinTriggerCount = 0;
         let totalBet = 0;
-        let maxWin = 0;
-        const wins: number[] = [];
+        let maxCycleWin = 0;
+        
+        // Store cycle results for volatility calculation
+        const paidCycleResults: number[] = [];
+        
+        // Track the current cycle
+        let currentCycleWin = 0;
+        let currentCycleHasBonus = false;
+        let paidSpinsProcessed = 0;
+        
+        // Store free wins for additional metrics
+        const freeWins: number[] = [];
 
-        for(let i=0; i < iterations; i++){
+        // Symbols & Line tracking (grouped by session type)
+        const statsBySession = {
+            base: {
+                symbolStats: {} as Record<string, { win: number, count: number }>,
+                lineStats: {} as Record<string, { win: number, count: number }>
+            },
+            free: {
+                symbolStats: {} as Record<string, { win: number, count: number }>,
+                lineStats: {} as Record<string, { win: number, count: number }>
+            }
+        };
+
+        // Main simulation loop - based on PAID spins only
+        while (paidSpinsProcessed < iterations) {
             let data = await getRoundData(session, serializer) as VideoSlotWithFreeGamesRoundNetworkData;
             const isFreeGame = data.freeGamesNum !== undefined && data.freeGamesNum > 0;
+            const sessionType = isFreeGame ? 'free' : 'base';
             
             let roundWin = 0;
             if (data.winningLines) {
                 Object.values(data.winningLines).forEach(line => {
                     roundWin += line.winAmount;
+                    
+                    // Symbol Stats
+                    if (!statsBySession[sessionType].symbolStats[line.symbolId]) {
+                        statsBySession[sessionType].symbolStats[line.symbolId] = { win: 0, count: 0 };
+                    }
+                    statsBySession[sessionType].symbolStats[line.symbolId].win += line.winAmount;
+                    statsBySession[sessionType].symbolStats[line.symbolId].count++;
+
+                    // Line Stats
+                    if (!statsBySession[sessionType].lineStats[line.lineId]) {
+                        statsBySession[sessionType].lineStats[line.lineId] = { win: 0, count: 0 };
+                    }
+                    statsBySession[sessionType].lineStats[line.lineId].win += line.winAmount;
+                    statsBySession[sessionType].lineStats[line.lineId].count++;
                 });
             }
             if (data.winningScatters) {
                 Object.values(data.winningScatters).forEach(scatter => {
                     roundWin += scatter.winAmount;
+
+                    // Symbol Stats
+                    if (!statsBySession[sessionType].symbolStats[scatter.symbolId]) {
+                        statsBySession[sessionType].symbolStats[scatter.symbolId] = { win: 0, count: 0 };
+                    }
+                    statsBySession[sessionType].symbolStats[scatter.symbolId].win += scatter.winAmount;
+                    statsBySession[sessionType].symbolStats[scatter.symbolId].count++;
                 });
             }
 
-            maxWin = Math.max(maxWin, roundWin);
-            wins.push(roundWin);
-
-            if (isFreeGame) {
-                totalFreeRounds++;
-                totalFreeWin += roundWin;
-            } else {
+            if (!isFreeGame) {
+                // Complete the previous cycle (if any)
+                if (paidSpinsProcessed > 0) {
+                    paidCycleResults.push(currentCycleWin);
+                    maxCycleWin = Math.max(maxCycleWin, currentCycleWin);
+                }
+                
+                // Reset for new cycle
+                currentCycleWin = roundWin;
+                currentCycleHasBonus = false;
+                
+                // Start new betting cycle
+                totalBet += data.bet;
+                paidSpinsProcessed++;
                 totalNormalRounds++;
                 totalNormalWin += roundWin;
-                totalBet += data.bet;
+                
                 if (roundWin > 0) {
                     normalWinCount++;
                 }
+                
+                // Check if this spin triggered free games
                 if (data.wonFreeGamesNumber !== undefined && data.wonFreeGamesNumber > 0) {
                     freeSpinTriggerCount++;
+                    currentCycleHasBonus = true;
+                }
+            } else {
+                // Continue bonus cycle - add to current cycle
+                totalFreeRounds++;
+                totalFreeWin += roundWin;
+                currentCycleWin += roundWin;
+                freeWins.push(roundWin);
+                if (roundWin > 0) {
+                    freeWinCount++;
                 }
             }
         }
+        
+        // VERY IMPORTANT: Push the final cycle
+        // This ensures the last cycle is always counted regardless of bonus state
+        if (paidSpinsProcessed > 0) {
+            paidCycleResults.push(currentCycleWin);
+            maxCycleWin = Math.max(maxCycleWin, currentCycleWin);
+        }
 
-        // --- BULK STATS RECORDING (One Redis round-trip for 10,000+ spins) ---
+        // --- VALIDATION: Check if we have the right number of cycles ---
+        console.log(`DEBUG: paidSpinsProcessed=${paidSpinsProcessed}, cycles=${paidCycleResults.length}, iterations=${iterations}`);
+        
+        // If cycle count doesn't match iterations, we have a bug
+        if (paidCycleResults.length !== iterations) {
+            console.warn(`WARNING: Cycle count mismatch! Expected ${iterations}, got ${paidCycleResults.length}`);
+        }
+
+        // --- BULK STATS RECORDING ---
         const totalSimWin = totalNormalWin + totalFreeWin;
-        await recordSpinStats(redisClient, userId, totalBet, totalSimWin, gameId, true, iterations);
+        //await recordSpinStats(redisClient, userId, totalBet, totalSimWin, gameId, true, iterations);
 
+        // --- RTP CALCULATIONS ---
         const normalRtp = totalBet > 0 ? totalNormalWin / totalBet : 0;
         const freeRtp = totalBet > 0 ? totalFreeWin / totalBet : 0;
         const totalRtp = totalBet > 0 ? (totalNormalWin + totalFreeWin) / totalBet : 0;
+        
+        // --- HIT FREQUENCY & TRIGGER RATE ---
         const hitFrequency = totalNormalRounds > 0 ? normalWinCount / totalNormalRounds : 0;
         const freeSpinTriggerFrequency = totalNormalRounds > 0 ? freeSpinTriggerCount / totalNormalRounds : 0;
-
-        // Volatility calculation (Standard Deviation)
-        const mean = (totalNormalWin + totalFreeWin) / iterations;
-        const squareDiffs = wins.map(win => Math.pow(win - mean, 2));
-        const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / iterations;
-        const volatility = Math.sqrt(avgSquareDiff);
+        
+        // --- CORRECTED VOLATILITY CALCULATION (Cycle-based) ---
+        const meanCycleWin = paidCycleResults.reduce((a, b) => a + b, 0) / paidCycleResults.length;
+        const cycleSquareDiffs = paidCycleResults.map(win => Math.pow(win - meanCycleWin, 2));
+        const cycleVariance = cycleSquareDiffs.reduce((a, b) => a + b, 0) / paidCycleResults.length;
+        const volatility = Math.sqrt(cycleVariance);
+        
+        // --- ADDITIONAL VALIDATION METRICS ---
+        const freeSpinHitFrequency = totalFreeRounds > 0 ? freeWinCount / totalFreeRounds : 0;
+        const avgFreeSpinsPerTrigger = freeSpinTriggerCount > 0 ? totalFreeRounds / freeSpinTriggerCount : 0;
+        const avgWinPerFreeSpin = totalFreeRounds > 0 ? totalFreeWin / totalFreeRounds : 0;
+        const avgWinPerTrigger = freeSpinTriggerCount > 0 ? totalFreeWin / freeSpinTriggerCount : 0;
 
         // --- JILI STYLE CALCULATIONS ---
         const bonusTrigger = freeSpinTriggerFrequency > 0 ? `~${Math.round(1 / freeSpinTriggerFrequency)} spins` : "N/A";
-        const maxWinMultiplier = `${(maxWin / 1).toFixed(0)}x`; // bet is forced to 1 in simulation
+        const maxWinMultiplier = `${maxCycleWin.toFixed(0)}x`;
         
+        // Volatility Label (adjusted for cycle-based values)
         let volatilityLabel = "Low";
         if (volatility > 40) {
-            volatilityLabel = "Extreme";     // Like Charge Buffalo (12,000x)
+            volatilityLabel = "Extreme";
         } else if (volatility > 25) {
-            volatilityLabel = "High";        // Like Roma X (7,500x)
+            volatilityLabel = "High";
         } else if (volatility > 15) {
-            volatilityLabel = "Med-High";    // YOUR CURRENT MEGA WIN (2,000x)
+            volatilityLabel = "Med-High";
         } else if (volatility > 10) {
-            volatilityLabel = "Medium";      // Like Fortune Gems (500x)
+            volatilityLabel = "Medium";
         } else if (volatility > 6) {
-            volatilityLabel = "Low-Med";     // Like Crazy777
+            volatilityLabel = "Low-Med";
         } else {
-            volatilityLabel = "Low";         // Simple 3-reel bars/cherries
+            volatilityLabel = "Low";
         }
 
+        // --- BREAKDOWN CALCULATIONS ---
+        const calculateBreakdown = (stats: Record<string, { win: number, count: number }>, idKey: string) => {
+            return Object.entries(stats).map(([id, s]) => ({
+                [idKey]: id,
+                totalWin: parseFloat(s.win.toFixed(2)),
+                hitCount: s.count,
+                contribution: totalBet > 0 ? parseFloat(((s.win / totalBet) * 100).toFixed(2)) : 0
+            })).sort((a: any, b: any) => b.totalWin - a.totalWin);
+        };
+
+        // Aggregate totals for backward compatibility
+        const totalSymbolStats: Record<string, { win: number, count: number }> = {};
+        const totalLineStats: Record<string, { win: number, count: number }> = {};
+
+        ['base', 'free'].forEach((mode) => {
+            const m = mode as 'base' | 'free';
+            Object.entries(statsBySession[m].symbolStats).forEach(([id, s]) => {
+                if (!totalSymbolStats[id]) totalSymbolStats[id] = { win: 0, count: 0 };
+                totalSymbolStats[id].win += s.win;
+                totalSymbolStats[id].count += s.count;
+            });
+            Object.entries(statsBySession[m].lineStats).forEach(([id, s]) => {
+                if (!totalLineStats[id]) totalLineStats[id] = { win: 0, count: 0 };
+                totalLineStats[id].win += s.win;
+                totalLineStats[id].count += s.count;
+            });
+        });
+
+        const symbolBreakdown = calculateBreakdown(totalSymbolStats, 'symbolId');
+        const lineBreakdown = calculateBreakdown(totalLineStats, 'lineId');
+
+        // --- RESPONSE ---
         res.json({
             // Jili-Style Primary Metrics
             rtp: (totalRtp * 100).toFixed(1) + "%",
@@ -691,6 +816,24 @@ app.get('/user-session-simulation', async (req, res) => {
             hitFrequencyPercent: (hitFrequency * 100).toFixed(0) + "%",
             bonusTrigger: bonusTrigger,
             maxWinMultiplier: maxWinMultiplier,
+
+            // New Grouped Breakdowns
+            breakdowns: {
+                symbols: {
+                    total: symbolBreakdown,
+                    base: calculateBreakdown(statsBySession.base.symbolStats, 'symbolId'),
+                    free: calculateBreakdown(statsBySession.free.symbolStats, 'symbolId')
+                },
+                lines: {
+                    total: lineBreakdown,
+                    base: calculateBreakdown(statsBySession.base.lineStats, 'lineId'),
+                    free: calculateBreakdown(statsBySession.free.lineStats, 'lineId')
+                }
+            },
+
+            // Backward Compatibility Fields
+            symbolBreakdown,
+            lineBreakdown,
 
             // Raw Data (Backward Compatibility)
             normalRoundsCount: totalNormalRounds,
@@ -701,13 +844,19 @@ app.get('/user-session-simulation', async (req, res) => {
             hitFrequency: parseFloat(hitFrequency.toFixed(4)),
             freeSpinTriggerFrequency: parseFloat(freeSpinTriggerFrequency.toFixed(4)),
             volatility: parseFloat(volatility.toFixed(4)),
-            maxWin: parseFloat(maxWin.toFixed(2)),
+            maxWin: parseFloat(maxCycleWin.toFixed(2)),
             bonusContribution: totalNormalWin + totalFreeWin > 0 ? parseFloat((totalFreeWin / (totalNormalWin + totalFreeWin)).toFixed(4)) : 0,
+            
+            // New Validation Metrics
+            freeSpinHitFrequency: parseFloat(freeSpinHitFrequency.toFixed(4)),
+            avgFreeSpinsPerTrigger: parseFloat(avgFreeSpinsPerTrigger.toFixed(2)),
+            avgWinPerFreeSpin: parseFloat(avgWinPerFreeSpin.toFixed(2)),
+            
             details: {
                 totalNormalWin: parseFloat(totalNormalWin.toFixed(2)),
                 totalFreeWin: parseFloat(totalFreeWin.toFixed(2)),
                 totalBet: parseFloat(totalBet.toFixed(2)),
-                avgWinPerTrigger: freeSpinTriggerCount > 0 ? parseFloat((totalFreeWin / freeSpinTriggerCount).toFixed(2)) : 0
+                avgWinPerTrigger: parseFloat(avgWinPerTrigger.toFixed(2))
             }
         });
 
@@ -715,7 +864,7 @@ app.get('/user-session-simulation', async (req, res) => {
         console.error("Error during simulation:", error);
         res.status(500).json({ error: "An error occurred during the simulation." });
     }
-})
+});
 
 app.get('/admin/health', async (req, res) => {
     const apiKey = req.headers['x-admin-key'];
