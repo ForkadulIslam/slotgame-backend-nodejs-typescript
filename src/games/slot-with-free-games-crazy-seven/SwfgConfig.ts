@@ -23,7 +23,7 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
         this.setReelsNumber(5);
         this.setReelsSymbolsNumber(4);
 
-        this.setAvailableSymbols(["Filler", "Ace", "King", "Queen", "Jack", "Ten", "Nine", "W", "S"]);
+        this.setAvailableSymbols(["Filler", "Ace", "King", "Queen", "Jack", "Diamond", "Spade", "W", "S"]);
         this.setWildSymbols(["W"]);
         this.setScatterSymbols(["S"]);
         const sequences = [];
@@ -31,15 +31,15 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             
             const sequence = new SymbolsSequence();
             sequence.fromNumbersOfSymbols({
-                Filler: 160,
-                Nine: 80,    
-                Ten: 70,    
+                Filler: 100,
+                Spade: 80,    
+                Diamond: 70,    
                 Jack: 50,   
                 Queen: 45,   
                 King: 35,
                 Ace: 55,
-                W: 10,
-                S: 40,
+                W: 20,
+                S: 20,
             });
             sequence.shuffle();
             for (let j = 0; j < sequence.getSize(); j++) {
@@ -72,12 +72,12 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
 
                 switch(symbol){
 
-                    case "Nine":
+                    case "Spade":
                         pt.setPayoutForSymbol(symbol, 3, 0.2); 
                         pt.setPayoutForSymbol(symbol, 4, 1.0);
                         pt.setPayoutForSymbol(symbol, 5, 5.0);
                         break;
-                    case "Ten":
+                    case "Diamond":
                         pt.setPayoutForSymbol(symbol, 3, 0.5); 
                         pt.setPayoutForSymbol(symbol, 4, 2.0);
                         pt.setPayoutForSymbol(symbol, 5, 10.0);
@@ -134,8 +134,8 @@ export class SwfgConfig extends VideoSlotWithFreeGamesConfig {
             .map((sequence) =>{
                 const newSeq = new SymbolsSequence().fromArray(sequence.toArray());
                 newSeq.removeAllSymbols(this.getScatterSymbols()[0]);
-                newSeq.removeAllSymbols("Nine");
-                newSeq.removeAllSymbols("Ten");
+                newSeq.removeAllSymbols("Spade");
+                newSeq.removeAllSymbols("Diamond");
                 
                 // VOLATILITY BOOST: Add extra Aces in Free Games
                 newSeq.addSymbol("Ace", 60); 
