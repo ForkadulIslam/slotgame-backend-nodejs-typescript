@@ -376,7 +376,7 @@ app.post('/start-session', async (req, res) => {
 app.post('/spin', async (req, res) => {
     
     const { bet, sessionId } = req.body; 
-    console.log(sessionId)
+    //console.log(sessionId)
     // Numeric validation for bet
     const numericBet = parseFloat(bet);
     if (!sessionId || isNaN(numericBet) || numericBet <= 0) {
@@ -419,7 +419,6 @@ app.post('/spin', async (req, res) => {
         // Increment spin count and execute
         state.spin_count++;
         userSession.setBet(numericBet);
-
         const roundData = await getRoundData(userSession, userSessionSerializer) as VideoSlotWithFreeGamesRoundNetworkData;
 
         // Calculate totalWin summary for the stats
@@ -461,7 +460,8 @@ app.post('/spin', async (req, res) => {
         res.json({
             ...roundData,
             spin_count: state.spin_count,
-            credits: state.credits // Return updated credits for UI sync
+            credits: state.credits, // Return updated credits for UI sync
+            totalWin
         });
 
     } catch (error: any) {

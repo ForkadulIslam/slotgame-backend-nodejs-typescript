@@ -7,7 +7,7 @@ Features:
   the winning line definition.
 - During free spins, symbol sequences are different from the base game's ones. Sequences during free spins do not
   contain scatter symbols, so free spins cannot be re-triggered.
-- During free spins, all wins are multiplied by x2.
+- All wins are multiplied incrementally starting from x1.
 - This example also demonstrates the usage of Simulation to obtain the desired game outcomes.
 */
 
@@ -47,7 +47,7 @@ winning scatters based on the symbols combination provided for this method. The 
 scatters, and other round-winning data can be retrieved through dedicated methods.
 
 For this example, we will use an instance of our custom win calculator, which inherits from VideoSlotWinCalculator, to
-ensure that the winnings during free spins are multiplied by x2.
+ensure that the line winnings are multiplied incrementally.
 */
 const winCalculator = new SwfgSessionWinCalculator(config);
 

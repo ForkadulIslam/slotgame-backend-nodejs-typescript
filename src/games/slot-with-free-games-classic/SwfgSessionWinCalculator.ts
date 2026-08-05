@@ -20,34 +20,56 @@ export class SwfgSessionWinCalculator extends VideoSlotWinCalculator {
 
     public calculateWin(bet: number, symbolsCombination: SymbolsCombinationDescribing) {
         super.calculateWin(bet, symbolsCombination);
+
+        const originalLines = super.getWinningLines();
+        const originalScatters = super.getWinningScatters();
+
+        //console.log()
         if (this.swfgConfig.isFreeGamesMode()) {
-            const originalScatters = super.getWinningScatters();
             this.multipliedScatters = {};
             Object.values(originalScatters).forEach(
                 (scatter) =>
                     (this.multipliedScatters![scatter.getSymbolId()] = new WinningScatter(
                         scatter.getSymbolId(),
                         scatter.getSymbolsPositions(),
-                        scatter.getWinAmount() * 2, // CLASSIC: x2 Multiplier
+                        scatter.getWinAmount() * 2, // Fixed x2 for Scatters in Free Games
                     )),
             );
-            const originalLines = super.getWinningLines();
             this.multipliedLines = {};
-            Object.values(originalLines).forEach(
-                (line) =>
-                    (this.multipliedLines![line.getLineId()] = new WinningLine(
-                        line.getWinAmount() * 2, // CLASSIC: x2 Multiplier
-                        line.getDefinition(),
-                        line.getPattern(),
-                        line.getLineId(),
-                        line.getSymbolsPositions(),
-                        line.getWildSymbolsPositions(),
-                        line.getSymbolId(),
-                    )),
-            );
+            let currentFreeGameMultiplier = 1;
+            const maxFreeGameMultiplier = 10;
+            Object.values(originalLines).forEach((line) =>{
+                const finalWin = Math.round((line.getWinAmount() * currentFreeGameMultiplier) * 100) / 100;
+                this.multipliedLines![line.getLineId()] = new WinningLine(
+                    finalWin,
+                    line.getDefinition(),
+                    line.getPattern(),
+                    line.getLineId(),
+                    line.getSymbolsPositions(),
+                    line.getWildSymbolsPositions(),
+                    line.getSymbolId(),
+                )
+                if (currentFreeGameMultiplier < maxFreeGameMultiplier) currentFreeGameMultiplier++;
+            });
         } else {
             this.multipliedScatters = undefined;
-            this.multipliedLines = undefined;
+            this.multipliedLines = {};
+            let currentMultiplier = 1;
+            const maxBaseMultiplier = 5;
+            Object.values(originalLines).forEach((line) =>{
+
+                const finalWin = Math.round((line.getWinAmount() * currentMultiplier) * 100) / 100;
+                this.multipliedLines![line.getLineId()] = new WinningLine(
+                    finalWin,
+                    line.getDefinition(),
+                    line.getPattern(),
+                    line.getLineId(),
+                    line.getSymbolsPositions(),
+                    line.getWildSymbolsPositions(),
+                    line.getSymbolId(),
+                )
+                if (currentMultiplier < maxBaseMultiplier) currentMultiplier++;
+            });
         }
     }
 
